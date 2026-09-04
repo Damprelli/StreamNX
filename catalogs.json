@@ -1,0 +1,62 @@
+[
+  {
+    "enabled": true,
+    "key": "cinemeta:popular-movies",
+    "title": "Filmes Populares",
+    "url": "https://v3-cinemeta.strem.io/catalog/movie/top.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:popular-series",
+    "title": "Series Populares",
+    "url": "https://v3-cinemeta.strem.io/catalog/series/top.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:new-movies",
+    "title": "Filmes Novos",
+    "url": "https://v3-cinemeta.strem.io/catalog/movie/year/genre=2026.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:new-series",
+    "title": "Series Novas",
+    "url": "https://v3-cinemeta.strem.io/catalog/series/year/genre=2026.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:top-movies",
+    "title": "Filmes Mais Bem Avaliados",
+    "url": "https://v3-cinemeta.strem.io/catalog/movie/imdbRating.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:top-series",
+    "title": "Series Mais Bem Avaliadas",
+    "url": "https://v3-cinemeta.strem.io/catalog/series/imdbRating.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:animation-movies",
+    "title": "Filmes de Animacao",
+    "url": "https://v3-cinemeta.strem.io/catalog/movie/top/genre=Animation.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:animation-series",
+    "title": "Series de Animacao",
+    "url": "https://v3-cinemeta.strem.io/catalog/series/top/genre=Animation.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:documentary-movies",
+    "title": "Documentarios",
+    "url": "https://v3-cinemeta.strem.io/catalog/movie/top/genre=Documentary.json"
+  },
+  {
+    "enabled": true,
+    "key": "cinemeta:documentary-series",
+    "title": "Documentarios (Series)",
+    "url": "https://v3-cinemeta.strem.io/catalog/series/top/genre=Documentary.json"
+  }
+]

@@ -1,0 +1,86 @@
+<brls:Box
+    width="160"
+    height="auto"
+    axis="column"
+    focusable="true"
+    highlightCornerRadius="12"
+    highlightPadding="4"
+    marginRight="16">
+
+    <brls:Box
+        id="media_card/poster_box"
+        width="160"
+        height="220"
+        axis="column"
+        alignItems="center"
+        justifyContent="center"
+        cornerRadius="8">
+
+        <brls:Label
+            id="media_card/initial"
+            fontSize="56"
+            textColor="#00000055" />
+
+        <brls:Image
+            id="media_card/poster_image"
+            positionType="absolute"
+            positionTop="0"
+            positionLeft="0"
+            width="100%"
+            height="100%"
+            cornerRadius="8"
+            scalingType="fill"
+            visibility="gone" />
+
+        <brls:Label
+            id="media_card/rating"
+            positionType="absolute"
+            positionTop="8"
+            positionRight="8"
+            fontSize="14"
+            textColor="#FFD54A" />
+
+        <brls:Label
+            id="media_card/favorite"
+            positionType="absolute"
+            positionBottom="8"
+            positionRight="8"
+            fontSize="18"
+            textColor="#FF4D6D"
+            text="&#9829;" />
+
+        <brls:Box
+            id="media_card/progress_track"
+            positionType="absolute"
+            positionBottom="0"
+            width="100%"
+            height="4"
+            backgroundColor="#00000066">
+
+            <brls:Rectangle
+                id="media_card/progress"
+                height="4"
+                width="0%"
+                color="#E5322D" />
+
+        </brls:Box>
+
+    </brls:Box>
+
+    <brls:Label
+        id="media_card/title"
+        width="160"
+        height="auto"
+        singleLine="true"
+        marginTop="8"
+        fontSize="16" />
+
+    <brls:Label
+        id="media_card/subtitle"
+        width="160"
+        height="auto"
+        singleLine="true"
+        fontSize="12"
+        textColor="#9AA0AC" />
+
+</brls:Box>

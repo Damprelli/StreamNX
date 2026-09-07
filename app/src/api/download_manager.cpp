@@ -288,7 +288,8 @@ void alertLoopThread()
             break;
 
         // Processar todos os alerts pendentes
-        auto alerts = g_ltSession->pop_alerts();
+        std::vector<lt::alert*> alerts;
+        g_ltSession->pop_alerts(&alerts);
 
         for (auto& alert : alerts)
         {
@@ -319,7 +320,7 @@ void alertLoopThread()
                     // Notificar progresso
                     if (session->onProgress && *session->alive)
                     {
-                        brls::sync([session] {
+                        brls::sync([=] {
                             if (*session->alive)
                                 session->onProgress(session->percentComplete,
                                     session->downloadedBytes, session->totalBytes);
@@ -402,11 +403,7 @@ void globalInit()
     try
     {
         lt::settings_pack sp;
-        sp.set_int(lt::settings_pack::alert_mask,
-            lt::alert::piece_finished_alert::static_category |
-            lt::alert::torrent_finished_alert::static_category |
-            lt::alert::torrent_error_alert::static_category |
-            lt::alert::torrent_added_alert::static_category);
+        sp.set_int(lt::settings_pack::alert_mask, lt::alert_category::all);
 
         // Limitar threads: 4 em desktop (Switch seria 2-3)
         sp.set_int(lt::settings_pack::aio_threads, 4);

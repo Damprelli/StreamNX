@@ -8,6 +8,7 @@
 
 #include "screen/main_menu.hpp"
 #include "api/http_client.hpp"
+#include "api/download_manager.hpp"
 #include "view/svg_image.hpp"
 #include "view/video_progress_slider.hpp"
 
@@ -40,6 +41,9 @@ int main(int argc, char* argv[])
     // fetching), and exactly once for the process's lifetime.
     http::globalInit();
 
+    // Initialize download manager (torrent support)
+    download_mgr::globalInit();
+
     // Custom widgets used by video_view.xml -- must be registered before
     // that XML is ever inflated (PlayerScreen's first construction).
     brls::Application::registerXMLView("SVGImage", SVGImage::create);
@@ -54,6 +58,7 @@ int main(int argc, char* argv[])
     while (brls::Application::mainLoop())
         ;
 
+    download_mgr::globalCleanup();
     http::globalCleanup();
 
     return EXIT_SUCCESS;

@@ -91,6 +91,24 @@ else ()
     message(STATUS "libwebp not found -- WebP poster images will stay on their placeholder")
 endif ()
 
+# Torrent download support via libtorrent-rasterbar (optional on desktop, may not be in Switch portlibs)
+if (PLATFORM_DESKTOP)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBTORRENT QUIET libtorrent-rasterbar)
+    if (LIBTORRENT_FOUND)
+        message(STATUS "Found libtorrent-rasterbar: ${LIBTORRENT_INCLUDE_DIRS}")
+        list(APPEND APP_PLATFORM_OPTION -DUSE_LIBTORRENT)
+        list(APPEND APP_PLATFORM_INCLUDE ${LIBTORRENT_INCLUDE_DIRS})
+        list(APPEND APP_PLATFORM_LIB ${LIBTORRENT_LIBRARIES})
+        link_directories(${LIBTORRENT_LIBRARY_DIRS})
+    else ()
+        message(STATUS "libtorrent-rasterbar not found -- torrent downloads disabled")
+    endif ()
+elseif (PLATFORM_SWITCH)
+    # Switch support for libtorrent would require devkitPro portlib
+    # For now, only desktop has torrent support
+endif ()
+
 # setting src and include
 list(APPEND APP_PLATFORM_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/app/include)
 file(GLOB_RECURSE MAIN_SRC app/src/*.cpp)

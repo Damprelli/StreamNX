@@ -16,6 +16,8 @@ class PlayerScreen : public brls::Box
 {
   public:
     PlayerScreen(const std::string& url, const std::string& title);
+    // Alternativo: aceita AliveFlag externo (usado por download_manager)
+    PlayerScreen(const std::string& url, const std::string& title, std::shared_ptr<bool> externalAlive);
     ~PlayerScreen();
 
   private:

@@ -9,7 +9,18 @@
 #endif
 
 PlayerScreen::PlayerScreen(const std::string& url, const std::string& title)
+    : PlayerScreen(url, title, std::make_shared<bool>(true))
 {
+}
+
+PlayerScreen::PlayerScreen(const std::string& url, const std::string& title, std::shared_ptr<bool> externalAlive)
+{
+    // Se passou AliveFlag externo (ex: download_manager), usar esse
+    if (externalAlive)
+    {
+        this->alive = externalAlive;
+    }
+
     this->setAxis(brls::Axis::COLUMN);
     this->setDimensions(brls::Application::contentWidth, brls::Application::contentHeight);
     // No background color here either -- same reason as PlayerView: an

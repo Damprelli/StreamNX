@@ -4,6 +4,7 @@
 #include "model/addon_store.hpp"
 #include "model/continue_watching_store.hpp"
 #include "api/stremio_api.hpp"
+#include "api/download_manager.hpp"
 
 #include <functional>
 #include <regex>
@@ -316,9 +317,25 @@ void StreamListScreen::finish()
 
 void StreamListScreen::play(const stremio::StreamEntry& entry)
 {
-    if (entry.url.empty())
-        return;
+    // Prioridade: HTTP direto > Torrent > Fallback HTTP
+    if (!entry.url.empty())
+    {
+        // HTTP direto: iniciar player imediatamente
+        this->playUrl(entry.url);
+    }
+    else if (!entry.infoHash.empty())
+    {
+        // Torrent: iniciar download e esperar URL local ficar pronta
+        this->playTorrent(entry);
+    }
+    else
+    {
+        brls::Logger::warn("Stream entry has neither URL nor infoHash");
+    }
+}
 
+void StreamListScreen::playUrl(const std::string& url)
+{
     // StreamNX-main's own RemoteView::play() explicitly pushes its player
     // with TransitionAnimation::NONE rather than the default fade -- a
     // fade-in animates this screen's own alpha every frame for its
@@ -327,7 +344,7 @@ void StreamListScreen::play(const stremio::StreamEntry& entry)
     // pipeline (rather than a normal static screen) may not have been
     // completing/settling the way it does for every other screen.
     brls::Application::pushActivity(
-        new brls::Activity(new PlayerScreen(entry.url, this->title)), brls::TransitionAnimation::NONE);
+        new brls::Activity(new PlayerScreen(url, this->title)), brls::TransitionAnimation::NONE);
 
     ContinueWatchingStore::instance().touch(ContinueWatching {
         this->showId.empty() ? this->videoId : this->showId,
@@ -336,4 +353,57 @@ void StreamListScreen::play(const stremio::StreamEntry& entry)
         this->posterUrl,
         this->subtitle,
     });
+}
+
+void StreamListScreen::playTorrent(const stremio::StreamEntry& entry)
+{
+#ifdef USE_LIBTORRENT
+    // PlayerScreen cria seu próprio AliveFlag; quando destruído, PlayerScreen
+    // destrutor define-o como false, sinalizando download_manager para parar.
+    auto playerAlive = std::make_shared<bool>(true);
+
+    // Callbacks: quando o download estiver pronto, iniciar player
+    download_mgr::startTorrentDownload(
+        entry.infoHash,
+        entry.title.empty() ? entry.name : entry.title,
+        playerAlive,
+        // onProgress: mostrar na UI seria legal, mas por enquanto apenas log
+        [entry](float percent, int64_t downloaded, int64_t total) {
+            brls::Logger::debug("Torrent progress: {:.1f}% ({}/{})", percent, downloaded, total);
+        },
+        // onUrlReady: chamado quando arquivo está pronto pra streaming
+        [this, playerAlive](const std::string& localUrl) {
+            brls::Logger::info("Torrent ready for playback: {}", localUrl);
+
+            // Passar o mesmo playerAlive pro PlayerScreen
+            // Quando PlayerScreen for destruído, playerAlive fica false
+            // E download_manager sabe que deve parar/limpar
+            brls::Application::pushActivity(
+                new brls::Activity(new PlayerScreen(localUrl, this->title, playerAlive)),
+                brls::TransitionAnimation::NONE);
+
+            ContinueWatchingStore::instance().touch(ContinueWatching {
+                this->showId.empty() ? this->videoId : this->showId,
+                this->type,
+                this->title,
+                this->posterUrl,
+                this->subtitle,
+            });
+        },
+        // onError: fallback pra HTTP se torrent falhar
+        [this, entry](const std::string& error) {
+            brls::Logger::error("Torrent download error: {}", error);
+
+            // Mostrar diálogo ao usuário (opcional)
+            auto dialog = new brls::Dialog("Erro no Download\nTentando HTTP fallback...");
+            brls::Application::pushActivity(new brls::Activity(dialog));
+
+            // Por enquanto, apenas log -- HTTP fallback virá em Fase 4
+            // TODO: implementar startHttpDownload com fallback automático
+        }
+    );
+#else
+    brls::Logger::error("Torrent download not available (libtorrent not compiled)");
+    brls::Application::notify("Torrents não suportados nesta compilação");
+#endif
 }

@@ -41,6 +41,8 @@ class StreamListScreen : public brls::Box
     void queryAddon(size_t addonIndex);
     void finish();
     void play(const stremio::StreamEntry& entry);
+    void playUrl(const std::string& url);
+    void playTorrent(const stremio::StreamEntry& entry);
 
     std::string type;
     std::string videoId;

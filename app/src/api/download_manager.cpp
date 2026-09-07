@@ -293,11 +293,11 @@ void alertLoopThread()
 
         for (auto& alert : alerts)
         {
-            if (auto* ta = lt::alert_cast<lt::torrent_added_alert>(alert.get()))
+            if (auto* ta = lt::alert_cast<lt::torrent_added_alert>(alert))
             {
                 brls::Logger::info("Torrent added: {}", ta->handle.info_hash().to_string());
             }
-            else if (auto* pa = lt::alert_cast<lt::piece_finished_alert>(alert.get()))
+            else if (auto* pa = lt::alert_cast<lt::piece_finished_alert>(alert))
             {
                 auto hash = pa->handle.info_hash().to_string();
                 if (auto it = g_activeSessions.find(hash); it != g_activeSessions.end())
@@ -341,7 +341,7 @@ void alertLoopThread()
 
                             if (session->onUrlReady && *session->alive)
                             {
-                                brls::sync([session, localUrl] {
+                                brls::sync([=] {
                                     if (*session->alive)
                                         session->onUrlReady(localUrl);
                                 });
@@ -354,7 +354,7 @@ void alertLoopThread()
                     saveMetadata(session);
                 }
             }
-            else if (auto* dca = lt::alert_cast<lt::torrent_finished_alert>(alert.get()))
+            else if (auto* dca = lt::alert_cast<lt::torrent_finished_alert>(alert))
             {
                 auto hash = dca->handle.info_hash().to_string();
                 if (auto it = g_activeSessions.find(hash); it != g_activeSessions.end())
@@ -366,7 +366,7 @@ void alertLoopThread()
                     saveMetadata(session);
                 }
             }
-            else if (auto* ea = lt::alert_cast<lt::torrent_error_alert>(alert.get()))
+            else if (auto* ea = lt::alert_cast<lt::torrent_error_alert>(alert))
             {
                 auto hash = ea->handle.info_hash().to_string();
                 if (auto it = g_activeSessions.find(hash); it != g_activeSessions.end())
@@ -378,7 +378,7 @@ void alertLoopThread()
 
                     if (session->onError && *session->alive)
                     {
-                        brls::sync([session, error] {
+                        brls::sync([=] {
                             if (*session->alive)
                                 session->onError(error);
                         });

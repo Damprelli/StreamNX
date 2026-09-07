@@ -330,7 +330,7 @@ void StreamListScreen::play(const stremio::StreamEntry& entry)
     }
     else
     {
-        brls::Logger::warn("Stream entry has neither URL nor infoHash");
+        brls::Logger::warning("Stream entry has neither URL nor infoHash");
     }
 }
 

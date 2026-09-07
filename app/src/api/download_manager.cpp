@@ -35,6 +35,7 @@ std::mutex g_sessionsMutex;
 #ifdef USE_LIBTORRENT
 // libtorrent session (global, persistent for app lifetime)
 std::unique_ptr<lt::session> g_ltSession;
+#endif
 
 // Metadados de um download em progresso
 struct TorrentSession
@@ -55,12 +56,16 @@ struct TorrentSession
     UrlReadyCallback onUrlReady;
     ErrorCallback onError;
 
+#ifdef USE_LIBTORRENT
     lt::torrent_handle handle;
+#endif
 };
 
+#ifdef USE_LIBTORRENT
 std::unordered_map<std::string, std::shared_ptr<TorrentSession>> g_activeSessions;
 std::thread g_alertThread;
 bool g_alertThreadRunning = false;
+#endif
 
 // Base directory para cache de downloads
 fs::path getCacheDir()

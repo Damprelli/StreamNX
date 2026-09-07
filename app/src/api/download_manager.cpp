@@ -61,11 +61,9 @@ struct TorrentSession
 #endif
 };
 
-#ifdef USE_LIBTORRENT
 std::unordered_map<std::string, std::shared_ptr<TorrentSession>> g_activeSessions;
 std::thread g_alertThread;
 bool g_alertThreadRunning = false;
-#endif
 
 // Base directory para cache de downloads
 fs::path getCacheDir()
@@ -278,6 +276,7 @@ void cleanupIfAliveFlag(const std::shared_ptr<TorrentSession>& session)
     }
 }
 
+#ifdef USE_LIBTORRENT
 // Thread que processa alerts do libtorrent
 void alertLoopThread()
 {

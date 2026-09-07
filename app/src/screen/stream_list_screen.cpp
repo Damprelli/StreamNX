@@ -259,15 +259,11 @@ void StreamListScreen::finish()
         this->loadingGate = nullptr;
     }
 
-    // Only a direct http(s) `url` can actually be played -- there's no
-    // torrent/debrid backend here (same reasoning StreamNX-main's own
-    // stream picker uses: an infoHash with no resolved url just means "no
-    // debrid service configured on that addon," not something this app, or
-    // even a real Stremio client without its torrent server, can hand a
-    // player directly).
+    // Filter playable streams: accept both HTTP URLs and torrents (via infoHash)
+    // HTTP URLs play directly; torrents use download_manager for streaming
     std::vector<stremio::StreamEntry> playable;
     for (auto& entry : this->collected)
-        if (!entry.url.empty())
+        if (!entry.url.empty() || !entry.infoHash.empty())
             playable.push_back(entry);
 
     if (playable.empty())
@@ -280,10 +276,7 @@ void StreamListScreen::finish()
         box->setFocusable(true);
 
         auto* label = new brls::Label();
-        label->setText(this->collected.empty()
-                ? "Nenhum stream encontrado nos addons ativos."
-                : "Os streams encontrados sao apenas torrents (sem link direto) --\n"
-                  "e preciso um addon com servico de debrid para assistir.");
+        label->setText("Nenhum stream encontrado nos addons ativos.");
         label->setFontSize(17);
         label->setTextColor(nvgRGB(180, 180, 180));
         label->setIsWrapping(true);

@@ -1,4 +1,5 @@
 #include "api/download_manager.hpp"
+#include "api/http_client.hpp"
 
 #include <borealis.hpp>
 #include <filesystem>
@@ -7,6 +8,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <algorithm>
 #include <borealis/extern/nlohmann/json.hpp>
 
 #ifdef USE_LIBTORRENT
@@ -129,6 +131,148 @@ void saveMetadata(const std::shared_ptr<TorrentSession>& session)
     }
 }
 
+// Carrega metadados existentes (pra resumir downloads)
+std::shared_ptr<TorrentSession> loadMetadata(const fs::path& metadataFile, const fs::path& cacheDir)
+{
+    try
+    {
+        std::ifstream file(metadataFile);
+        if (!file)
+            return nullptr;
+
+        auto metadata = json::parse(file);
+        auto session = std::make_shared<TorrentSession>();
+
+        session->infoHash = metadata.value("infoHash", "");
+        session->title = metadata.value("title", "");
+        session->totalBytes = metadata.value("totalBytes", 0);
+        session->downloadedBytes = metadata.value("downloadedBytes", 0);
+        session->percentComplete = metadata.value("percentComplete", 0.0f);
+        session->isStreaming = metadata.value("isStreaming", false);
+        session->cacheDir = cacheDir;
+        session->metadataFile = metadataFile;
+        session->downloadingFile = cacheDir / ".downloading";
+
+        brls::Logger::info("Loaded metadata: {} ({:.1f}%)", session->title, session->percentComplete);
+        return session;
+    }
+    catch (const std::exception& e)
+    {
+        brls::Logger::error("Failed to load metadata: {}", e.what());
+        return nullptr;
+    }
+}
+
+// Verifica espaço em disco disponível
+int64_t getAvailableDiskSpace(const fs::path& path)
+{
+    try
+    {
+        fs::space_info si = fs::space(path);
+        return si.available;
+    }
+    catch (const std::exception& e)
+    {
+        brls::Logger::error("Failed to check disk space: {}", e.what());
+        return -1;
+    }
+}
+
+// Limpa downloads antigos/incompletos se espaço insuficiente
+void cleanupOldDownloads(const fs::path& baseCacheDir, int64_t requiredSpace = 100 * 1024 * 1024)
+{
+    try
+    {
+        int64_t available = getAvailableDiskSpace(baseCacheDir);
+        if (available < 0 || available > requiredSpace)
+            return;  // Espaço suficiente
+
+        brls::Logger::info("Disk space low, cleaning old downloads");
+
+        std::vector<std::pair<fs::path, std::time_t>> downloads;
+
+        // Listar todos os diretórios de download
+        for (const auto& entry : fs::directory_iterator(baseCacheDir))
+        {
+            if (entry.is_directory())
+            {
+                fs::path metaFile = entry.path() / ".metadata";
+                if (fs::exists(metaFile))
+                {
+                    auto lastWrite = fs::last_write_time(metaFile);
+                    auto sctp = std::chrono::time_point_cast<std::chrono::system_clock::duration>(
+                        lastWrite - fs::file_time_type::clock::now() + std::chrono::system_clock::now());
+                    auto time = std::chrono::system_clock::to_time_t(sctp);
+                    downloads.push_back({entry.path(), time});
+                }
+            }
+        }
+
+        // Ordenar por timestamp (mais antigos primeiro)
+        std::sort(downloads.begin(), downloads.end(),
+            [](const auto& a, const auto& b) { return a.second < b.second; });
+
+        // Remover downloads incompletos mais antigos
+        for (const auto& [dir, timestamp] : downloads)
+        {
+            // Só remove se o download não foi completado (% < 100)
+            fs::path metaFile = dir / ".metadata";
+            try
+            {
+                std::ifstream f(metaFile);
+                auto meta = json::parse(f);
+                float percent = meta.value("percentComplete", 0.0f);
+
+                if (percent < 100.0f)
+                {
+                    brls::Logger::info("Removing incomplete download: {}", dir.filename().string());
+                    fs::remove_all(dir);
+
+                    available = getAvailableDiskSpace(baseCacheDir);
+                    if (available > requiredSpace)
+                        break;
+                }
+            }
+            catch (const std::exception& e)
+            {
+                brls::Logger::error("Error cleaning download: {}", e.what());
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        brls::Logger::error("Cleanup failed: {}", e.what());
+    }
+}
+
+// Limpa downloads quando AliveFlag fica false (usuário saiu)
+void cleanupIfAliveFlag(const std::shared_ptr<TorrentSession>& session)
+{
+    if (!session || !session->alive)
+        return;
+
+    if (*session->alive)
+        return;  // Ainda vivo
+
+    // AliveFlag virou false - usuário saiu
+    // Se download ainda incompleto, remove arquivo temporário
+    if (session->percentComplete < 100.0f)
+    {
+        try
+        {
+            if (fs::exists(session->downloadingFile))
+            {
+                fs::remove(session->downloadingFile);
+                brls::Logger::info("Cleaned incomplete download: {}", session->title);
+            }
+        }
+        catch (const std::exception& e)
+        {
+            brls::Logger::error("Error cleaning incomplete download: {}", e.what());
+        }
+    }
+}
+
 // Thread que processa alerts do libtorrent
 void alertLoopThread()
 {
@@ -154,6 +298,14 @@ void alertLoopThread()
                 if (auto it = g_activeSessions.find(hash); it != g_activeSessions.end())
                 {
                     auto session = it->second;
+
+                    // Verificar se AliveFlag virou false (usuário saiu)
+                    if (!(*session->alive))
+                    {
+                        cleanupIfAliveFlag(session);
+                        continue;
+                    }
+
                     session->downloadedBytes = pa->handle.status().total_done;
                     session->totalBytes = pa->handle.status().total_wanted;
                     session->percentComplete =
@@ -261,6 +413,28 @@ void globalInit()
         // Iniciar thread de processamento de alerts
         g_alertThreadRunning = true;
         g_alertThread = std::thread(alertLoopThread);
+
+        // Carregar downloads anteriores pra resume
+        fs::path baseCacheDir = getCacheDir();
+        for (const auto& entry : fs::directory_iterator(baseCacheDir))
+        {
+            if (entry.is_directory())
+            {
+                fs::path metaFile = entry.path() / ".metadata";
+                if (fs::exists(metaFile))
+                {
+                    auto session = loadMetadata(metaFile, entry.path());
+                    if (session && session->percentComplete < 100.0f)
+                    {
+                        // TODO: Re-adicionar torrent à sessão pra resume
+                        // Por enquanto, apenas carrega metadados
+                        g_activeSessions[session->infoHash] = session;
+                        brls::Logger::info("Resumable download found: {} ({:.1f}%)",
+                            session->title, session->percentComplete);
+                    }
+                }
+            }
+        }
 
         brls::Logger::info("download_manager: libtorrent initialized");
     }
@@ -395,13 +569,56 @@ void startHttpDownload(
     UrlReadyCallback onUrlReady,
     ErrorCallback onError)
 {
-    // TODO: Fase 3 - implementar fallback HTTP
-    // Por enquanto, apenas retorna erro
-    if (onError)
+    if (!alive)
+        return;
+
+    std::lock_guard<std::mutex> lock(g_sessionsMutex);
+
+    try
     {
-        brls::sync([onError] {
-            onError("HTTP download not yet implemented");
-        });
+        // Usar hash da URL como identifique (similar a torrents)
+        std::hash<std::string> hasher;
+        std::string urlHash = std::to_string(hasher(url));
+
+        // Verificar espaço em disco antes
+        fs::path baseCacheDir = getCacheDir();
+        int64_t available = getAvailableDiskSpace(baseCacheDir);
+        if (available < 100 * 1024 * 1024)  // < 100MB
+        {
+            cleanupOldDownloads(baseCacheDir);
+            available = getAvailableDiskSpace(baseCacheDir);
+            if (available < 50 * 1024 * 1024)
+            {
+                if (onError)
+                {
+                    brls::sync([onError] {
+                        onError("Insufficient disk space");
+                    });
+                }
+                return;
+            }
+        }
+
+        // HTTP download seria uma operação mais complexa
+        // Por enquanto, apenas retorna URL direto (fallback simples)
+        brls::Logger::info("HTTP fallback: streaming directly from {}", url);
+
+        if (onUrlReady && *alive)
+        {
+            brls::sync([onUrlReady, url] {
+                onUrlReady(url);
+            });
+        }
+    }
+    catch (const std::exception& e)
+    {
+        brls::Logger::error("HTTP download error: {}", e.what());
+        if (onError)
+        {
+            brls::sync([onError, e] {
+                onError(std::string("HTTP error: ") + e.what());
+            });
+        }
     }
 }
 
@@ -440,6 +657,7 @@ void cancelDownload(const std::string& infoHash)
 
     auto session = it->second;
 
+    // Remover da sessão de torrent
     if (g_ltSession && session->handle.is_valid())
     {
         try
@@ -452,18 +670,8 @@ void cancelDownload(const std::string& infoHash)
         }
     }
 
-    // Limpar arquivos temporários
-    try
-    {
-        if (fs::exists(session->downloadingFile))
-            fs::remove(session->downloadingFile);
-        if (fs::exists(session->metadataFile))
-            fs::remove(session->metadataFile);
-    }
-    catch (const std::exception& e)
-    {
-        brls::Logger::error("Error cleaning up download files: {}", e.what());
-    }
+    // Usar função de cleanup (respeita % completo)
+    cleanupIfAliveFlag(session);
 
     g_activeSessions.erase(it);
     brls::Logger::info("Download canceled: {}", infoHash);

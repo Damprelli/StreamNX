@@ -391,15 +391,38 @@ void StreamListScreen::playTorrent(const stremio::StreamEntry& entry)
             });
         },
         // onError: fallback pra HTTP se torrent falhar
-        [this, entry](const std::string& error) {
+        [this, entry, playerAlive](const std::string& error) {
             brls::Logger::error("Torrent download error: {}", error);
+            brls::Logger::info("Attempting HTTP fallback for: {}", entry.url);
 
-            // Mostrar diálogo ao usuário (opcional)
-            auto dialog = new brls::Dialog("Erro no Download\nTentando HTTP fallback...");
-            brls::Application::pushActivity(new brls::Activity(dialog));
+            // Fallback automático para HTTP se torrent falhar
+            download_mgr::startHttpDownload(
+                entry.url,
+                entry.title.empty() ? entry.name : entry.title,
+                playerAlive,
+                nullptr,  // sem onProgress pra HTTP
+                // onUrlReady: começa a tocar direto (ou com buffer pequeno)
+                [this, playerAlive](const std::string& httpUrl) {
+                    brls::Logger::info("HTTP fallback ready: {}", httpUrl);
 
-            // Por enquanto, apenas log -- HTTP fallback virá em Fase 4
-            // TODO: implementar startHttpDownload com fallback automático
+                    brls::Application::pushActivity(
+                        new brls::Activity(new PlayerScreen(httpUrl, this->title, playerAlive)),
+                        brls::TransitionAnimation::NONE);
+
+                    ContinueWatchingStore::instance().touch(ContinueWatching {
+                        this->showId.empty() ? this->videoId : this->showId,
+                        this->type,
+                        this->title,
+                        this->posterUrl,
+                        this->subtitle,
+                    });
+                },
+                // onError: falhou também no HTTP
+                [this](const std::string& httpError) {
+                    brls::Logger::error("HTTP fallback also failed: {}", httpError);
+                    brls::Application::notify("Erro: torrent e HTTP falharam");
+                }
+            );
         }
     );
 #else

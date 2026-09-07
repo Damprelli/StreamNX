@@ -533,10 +533,42 @@ void startTorrentDownload(
 
         fs::create_directories(session->cacheDir);
 
-        // TODO: Fase 3 - carregar arquivo .torrent e adicionar à sessão
-        // Por enquanto, apenas estrutura preparada
+        // Validar infoHash (precisa ser formato válido)
+        if (infoHash.empty() || infoHash.length() < 32)
+        {
+            throw std::runtime_error("Invalid infoHash format");
+        }
 
-        brls::Logger::info("Torrent download queued: {} ({})", title, infoHash);
+        // Criar magnet link a partir do infoHash
+        // Formato: magnet:?xt=urn:btih:<infoHash>
+        std::string magnetLink = "magnet:?xt=urn:btih:" + infoHash;
+
+        brls::Logger::info("Adding torrent to session: {} ({})", title, magnetLink);
+
+        // Adicionar torrent à sessão do libtorrent
+        lt::add_torrent_params params;
+        params.url = magnetLink;
+        params.save_path = session->downloadingFile.parent_path().string();
+
+        // Resume: se já tem arquivo parcial, aproveitar
+        if (fs::exists(session->downloadingFile))
+        {
+            params.resume_data = std::vector<char>();  // Deixar libtorrent carregar
+            brls::Logger::info("Resuming download: {}", title);
+        }
+
+        try
+        {
+            session->handle = g_ltSession->add_torrent(params);
+            brls::Logger::info("Torrent added to session: {}", title);
+        }
+        catch (const std::exception& e)
+        {
+            brls::Logger::error("Failed to add torrent: {}", e.what());
+            throw;
+        }
+
+        brls::Logger::info("Torrent download started: {} ({})", title, infoHash);
 
         g_activeSessions[infoHash] = session;
     }

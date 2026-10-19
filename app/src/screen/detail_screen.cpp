@@ -6,6 +6,8 @@
 #include "model/addon_store.hpp"
 #include "model/favorite.hpp"
 #include "model/favorites_store.hpp"
+#include "utils/mouse.hpp"
+#include "view/ui_kit.hpp"
 
 #include <cctype>
 
@@ -53,7 +55,7 @@ brls::Box* pill(const std::string& text, NVGcolor bg, NVGcolor fg)
 
 // One season in the shelf: focusable pill with the season number and
 // episode count; A lists that season's episodes below the shelf.
-class SeasonPill : public brls::Box
+class SeasonPill : public HoverBox
 {
   public:
     SeasonPill(int season, size_t episodeCount, std::function<void()> onSelect)
@@ -64,7 +66,7 @@ class SeasonPill : public brls::Box
         this->setPadding(16, 22, 16, 22);
         this->setMarginRight(14);
         this->setCornerRadius(10);
-        this->setBackgroundColor(nvgRGB(30, 33, 41));
+        this->setHoverColors(ui::color("surface_raised"), ui::color("surface_hover"));
 
         auto* title = new brls::Label();
         title->setText(season == 0 ? "Especiais" : "Temporada " + std::to_string(season));
@@ -82,12 +84,13 @@ class SeasonPill : public brls::Box
             onSelect();
             return true;
         });
+        makeClickable(this);
     }
 };
 
 // One episode in the horizontally scrolling episode strip; A opens its
 // stream list.
-class EpisodeCard : public brls::Box
+class EpisodeCard : public HoverBox
 {
   public:
     EpisodeCard(const stremio::VideoEntry& video, std::function<void()> onSelect)
@@ -99,7 +102,7 @@ class EpisodeCard : public brls::Box
         this->setPadding(14, 18, 14, 18);
         this->setMarginRight(14);
         this->setCornerRadius(10);
-        this->setBackgroundColor(nvgRGB(26, 28, 35));
+        this->setHoverColors(ui::color("surface"), ui::color("surface_raised"));
 
         auto* number = new brls::Label();
         number->setText("Episodio " + std::to_string(video.episode));
@@ -118,6 +121,7 @@ class EpisodeCard : public brls::Box
             onSelect();
             return true;
         });
+        makeClickable(this);
     }
 };
 
@@ -130,7 +134,7 @@ DetailScreen::DetailScreen(const std::string& id, const std::string& type, const
 {
     this->setAxis(brls::Axis::COLUMN);
     this->setDimensions(brls::Application::contentWidth, brls::Application::contentHeight);
-    this->setBackgroundColor(nvgRGB(12, 13, 18));
+    this->setBackgroundColor(ui::color("bg"));
 
     this->registerAction(
         "Voltar", brls::BUTTON_B, [](brls::View*) {
@@ -139,10 +143,16 @@ DetailScreen::DetailScreen(const std::string& id, const std::string& type, const
         },
         false, false, brls::SOUND_BACK);
 
+#ifdef STREAMNX_PC_UI
+    this->addView(ui::backBar());
+#endif
+
     this->loadingGate = new LoadingGate([this]() { this->tryAddonsForMeta(0); }, 300);
     this->addView(this->loadingGate);
 
+#ifndef STREAMNX_PC_UI
     this->addView(new brls::BottomBar());
+#endif
 
     AddonStore::instance().load();
 }
@@ -213,7 +223,7 @@ void DetailScreen::showError(const std::string& message)
     label->setTextColor(nvgRGB(180, 180, 180));
     box->addView(label);
 
-    this->addView(box);
+    ui::addAboveFooter(this, box);
     brls::Application::giveFocus(this->getDefaultFocus());
 }
 
@@ -307,13 +317,14 @@ void DetailScreen::buildContent(const stremio::MetaDetail& detail)
     metaRow->addView(pill(detail.type == "series" ? "Serie" : "Filme", nvgRGB(30, 33, 41), nvgRGB(210, 210, 215)));
     infoCol->addView(metaRow);
 
-    this->favoriteButton = new brls::Box();
+    this->favoriteButton = new HoverBox();
     this->favoriteButton->setFocusable(true);
     this->favoriteButton->setAxis(brls::Axis::ROW);
     this->favoriteButton->setAlignItems(brls::AlignItems::CENTER);
     this->favoriteButton->setDimensions(brls::View::AUTO, brls::View::AUTO);
     this->favoriteButton->setPadding(10, 20, 10, 20);
-    this->favoriteButton->setCornerRadius(8);
+    this->favoriteButton->setCornerRadius(10);
+    this->favoriteButton->setHighlightCornerRadius(10);
     this->favoriteButton->setMarginTop(18);
 
     this->favoriteLabel = new brls::Label();
@@ -336,6 +347,7 @@ void DetailScreen::buildContent(const stremio::MetaDetail& detail)
         this->refreshFavoriteButton();
         return true;
     });
+    makeClickable(this->favoriteButton);
 
     auto* actionsRow = new brls::Box();
     actionsRow->setAxis(brls::Axis::ROW);
@@ -349,25 +361,10 @@ void DetailScreen::buildContent(const stremio::MetaDetail& detail)
     if (detail.type != "series")
     {
         std::string movieId = detail.id, movieTitle = detail.name;
-        auto* streamsButton = new brls::Box();
-        streamsButton->setFocusable(true);
-        streamsButton->setAxis(brls::Axis::ROW);
-        streamsButton->setAlignItems(brls::AlignItems::CENTER);
-        streamsButton->setDimensions(brls::View::AUTO, brls::View::AUTO);
-        streamsButton->setPadding(10, 20, 10, 20);
-        streamsButton->setCornerRadius(8);
+        auto* streamsButton = ui::button("Ver Streams", ui::ButtonStyle::Primary,
+            [this, movieId, movieTitle]() { this->openStreams(movieId, movieTitle, ""); }, ui::icons::play);
+        streamsButton->setPadding(10, 22, 10, 22);
         streamsButton->setMarginLeft(14);
-        streamsButton->setBackgroundColor(nvgRGB(60, 70, 200));
-
-        auto* streamsLabel = new brls::Label();
-        streamsLabel->setText("▶ Ver Streams");
-        streamsLabel->setFontSize(16);
-        streamsButton->addView(streamsLabel);
-
-        streamsButton->registerAction("Ver streams", brls::BUTTON_A, [this, movieId, movieTitle](brls::View*) {
-            this->openStreams(movieId, movieTitle, "");
-            return true;
-        });
 
         actionsRow->addView(streamsButton);
     }
@@ -428,7 +425,7 @@ void DetailScreen::buildContent(const stremio::MetaDetail& detail)
     content->addView(bodyBox);
 
     scroll->setContentView(content);
-    this->addView(scroll);
+    ui::addAboveFooter(this, scroll);
 
     // pushActivity() resolved its default focus the instant this screen was
     // pushed, when only the LoadingGate existed (nothing focusable) -- that
@@ -467,14 +464,60 @@ void DetailScreen::showSeasonEpisodes(int season)
         std::string title      = showName + (video.name.empty() ? "" : (" - " + video.name));
         std::string subtitle   = "Temporada " + std::to_string(season) + " - Episodio " + std::to_string(video.episode);
 
-        row->addView(new EpisodeCard(video, [this, videoId, title, subtitle]() { this->openStreams(videoId, title, subtitle); }));
+        std::string nextId, nextTitle, nextSubtitle;
+        bool hasNext = this->findNextEpisode(season, video.episode, nextId, nextTitle, nextSubtitle);
+
+        row->addView(new EpisodeCard(video, [this, videoId, title, subtitle, hasNext, nextId, nextTitle, nextSubtitle]() {
+            this->openStreams(videoId, title, subtitle, hasNext ? nextId : "", nextTitle, nextSubtitle);
+        }));
     }
 
     shelf->setContentView(row);
     this->episodesBox->addView(shelf);
 }
 
-void DetailScreen::openStreams(const std::string& videoId, const std::string& title, const std::string& subtitle)
+bool DetailScreen::findNextEpisode(
+    int season, int episode, std::string& outId, std::string& outTitle, std::string& outSubtitle)
+{
+    auto pickLowestEpisode = [](const std::vector<stremio::VideoEntry>& videos, int minEpisode) -> const stremio::VideoEntry* {
+        const stremio::VideoEntry* best = nullptr;
+        for (auto& v : videos)
+            if (v.episode > minEpisode && (!best || v.episode < best->episode))
+                best = &v;
+        return best;
+    };
+
+    auto it = this->seasons.find(season);
+    if (it != this->seasons.end())
+    {
+        if (const stremio::VideoEntry* next = pickLowestEpisode(it->second, episode))
+        {
+            outId       = next->id;
+            outTitle    = this->meta.name + (next->name.empty() ? "" : (" - " + next->name));
+            outSubtitle = "Temporada " + std::to_string(season) + " - Episodio " + std::to_string(next->episode);
+            return true;
+        }
+    }
+
+    // std::map keeps its keys sorted, so upper_bound(season) is exactly
+    // "the next season after this one", if there is one.
+    auto nextSeasonIt = this->seasons.upper_bound(season);
+    if (nextSeasonIt != this->seasons.end())
+    {
+        if (const stremio::VideoEntry* next = pickLowestEpisode(nextSeasonIt->second, /* minEpisode */ -1))
+        {
+            outId       = next->id;
+            outTitle    = this->meta.name + (next->name.empty() ? "" : (" - " + next->name));
+            outSubtitle = "Temporada " + std::to_string(nextSeasonIt->first) + " - Episodio " + std::to_string(next->episode);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void DetailScreen::openStreams(const std::string& videoId, const std::string& title, const std::string& subtitle,
+    const std::string& nextVideoId, const std::string& nextTitle, const std::string& nextSubtitle)
 {
     // NONE, not the default fade -- during the crossfade the previous
     // screen's own cards are still focusable underneath StreamListScreen
@@ -483,7 +526,8 @@ void DetailScreen::openStreams(const std::string& videoId, const std::string& ti
     // this screen instead. Same reasoning as PlayerScreen's own push.
     brls::Application::pushActivity(
         new brls::Activity(
-            new StreamListScreen(this->meta.type, videoId, title, subtitle, this->meta.id, this->meta.poster)),
+            new StreamListScreen(this->meta.type, videoId, title, subtitle, this->meta.id, this->meta.poster,
+                nextVideoId, nextTitle, nextSubtitle)),
         brls::TransitionAnimation::NONE);
 }
 
@@ -495,6 +539,9 @@ void DetailScreen::refreshFavoriteButton()
     bool favorited = FavoritesStore::instance().contains(this->meta.id.empty() ? this->id : this->meta.id);
 
     this->favoriteLabel->setText(favorited ? "♥ Favoritado" : "♥ Favoritar");
-    this->favoriteLabel->setTextColor(favorited ? nvgRGB(255, 255, 255) : nvgRGB(230, 230, 230));
-    this->favoriteButton->setBackgroundColor(favorited ? nvgRGB(200, 40, 70) : nvgRGB(40, 43, 51));
+    this->favoriteLabel->setTextColor(ui::color("text"));
+    if (favorited)
+        this->favoriteButton->setHoverColors(ui::color("danger"), ui::color("danger_hover"));
+    else
+        this->favoriteButton->setHoverColors(ui::color("surface_raised"), ui::color("surface_hover"));
 }

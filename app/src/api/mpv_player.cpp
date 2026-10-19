@@ -23,6 +23,29 @@ void* getProcAddress(void*, const char* name)
 } // namespace
 #endif
 
+namespace
+{
+
+// Translates a raw mpv/ffmpeg log line into a short, user-facing hint when
+// it recognizably points at an unsupported format/codec -- the raw wording
+// ("Failed to recognize file format by extension", "Cannot find codec
+// matching selected id") means nothing to someone picking a stream from a
+// list; this is what actually explains it. Falls back to an empty string
+// (caller keeps whatever generic message it already had) for anything else,
+// e.g. network errors, which have their own clear mpv_error_string().
+std::string friendlyPlaybackHint(const std::string& logLine)
+{
+    auto has = [&](const char* needle) { return logLine.find(needle) != std::string::npos; };
+
+    if (has("Failed to recognize file format") || has("Cannot find codec") || has("Could not find codec") ||
+        has("Failed to initialize decoder") || has("Failed to select codec") || has("Unknown codec"))
+        return "Formato ou codec de video/audio nao suportado neste dispositivo. Tente outro stream ou addon.";
+
+    return "";
+}
+
+} // namespace
+
 MpvPlayer& MpvPlayer::instance()
 {
     static MpvPlayer player;
@@ -191,15 +214,30 @@ void MpvPlayer::pumpEvents()
             {
                 auto* log = (mpv_event_log_message*)event->data;
                 if (log->log_level <= MPV_LOG_LEVEL_ERROR)
+                {
                     brls::Logger::error("mpv: {}: {}", log->prefix, log->text);
+                    // Kept for the END_FILE/error handler below -- log->text
+                    // already ends in '\n'; trimmed so it reads cleanly
+                    // once it's folded into a single-line UI message.
+                    std::string text = log->text;
+                    while (!text.empty() && (text.back() == '\n' || text.back() == '\r'))
+                        text.pop_back();
+                    if (!text.empty())
+                        this->lastErrorLog = text;
+                }
                 else
                     brls::Logger::warning("mpv: {}: {}", log->prefix, log->text);
                 break;
             }
 
             case MPV_EVENT_FILE_LOADED:
+                this->logVideoInfo("file loaded");
                 if (this->onLoaded)
                     this->onLoaded();
+                break;
+
+            case MPV_EVENT_VIDEO_RECONFIG:
+                this->logVideoInfo("video reconfig");
                 break;
 
             case MPV_EVENT_END_FILE:
@@ -209,7 +247,15 @@ void MpvPlayer::pumpEvents()
                 {
                     brls::Logger::error("MpvPlayer: playback error: {}", mpv_error_string(data->error));
                     if (this->onError)
-                        this->onError(mpv_error_string(data->error));
+                    {
+                        std::string hint = friendlyPlaybackHint(this->lastErrorLog);
+                        if (!hint.empty())
+                            this->onError(hint);
+                        else if (!this->lastErrorLog.empty())
+                            this->onError(std::string(mpv_error_string(data->error)) + ": " + this->lastErrorLog);
+                        else
+                            this->onError(mpv_error_string(data->error));
+                    }
                 }
                 else if (data->reason == MPV_END_FILE_REASON_EOF && this->onEndOfFile)
                 {
@@ -232,6 +278,22 @@ void MpvPlayer::pumpEvents()
     }
 }
 
+// Diagnostic only: which codec/pixel format the file has and which
+// decoder mpv actually picked -- a hardware-decoded frame format the
+// deko3d renderer can't take is a prime suspect for GPU-side crashes.
+void MpvPlayer::logVideoInfo(const char* when)
+{
+    auto prop = [this](const char* name) {
+        char* value = mpv_get_property_string(this->mpv, name);
+        std::string out = value ? value : "-";
+        if (value)
+            mpv_free(value);
+        return out;
+    };
+    brls::Logger::info("mpv: {}: format={} codec={} size={}x{} pixfmt={} hwdec={}", when, prop("file-format"),
+        prop("video-codec"), prop("width"), prop("height"), prop("video-params/pixelformat"), prop("hwdec-current"));
+}
+
 void MpvPlayer::loadUrl(const std::string& url)
 {
     this->ensureInitialized();
@@ -251,6 +313,7 @@ void MpvPlayer::loadUrl(const std::string& url)
     mpv_set_option_string(this->mpv, "vo", "libmpv");
 
     this->paused = false;
+    this->lastErrorLog.clear();
     const char* cmd[] = { "loadfile", url.c_str(), "replace", nullptr };
     mpv_command_async(this->mpv, 0, cmd);
 }
@@ -269,6 +332,15 @@ void MpvPlayer::seekRelative(int seconds)
         return;
     std::string amount = std::to_string(seconds);
     const char* cmd[]  = { "seek", amount.c_str(), "relative", nullptr };
+    mpv_command_async(this->mpv, 0, cmd);
+}
+
+void MpvPlayer::seekAbsolute(double seconds)
+{
+    if (!this->mpv)
+        return;
+    std::string amount = std::to_string(seconds);
+    const char* cmd[]  = { "seek", amount.c_str(), "absolute", nullptr };
     mpv_command_async(this->mpv, 0, cmd);
 }
 
@@ -471,6 +543,16 @@ void MpvPlayer::draw()
     // draw to finish before it composites/presents that same image.
     videoContext->queueSignalFence(&this->readyFence);
     videoContext->queueFlush();
+
+    // Marks the point of no return for a GPU-side failure: deko3d kills the
+    // process from inside mpv_render_context_render() without returning, so
+    // "about to render" as the last crash.log line means exactly that.
+    static bool loggedFirstRender = false;
+    if (!loggedFirstRender)
+    {
+        loggedFirstRender = true;
+        brls::Logger::info("mpv: first render call ({}x{})", fbo.w, fbo.h);
+    }
 
     int renderResult = mpv_render_context_render(this->renderCtx, renderParams);
     if (renderResult < 0 && renderResult != this->lastRenderError)

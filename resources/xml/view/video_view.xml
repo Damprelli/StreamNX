@@ -73,9 +73,34 @@
 
         <brls:Box
             id="video/osd/icon/box"
+            axis="row"
+            alignItems="center"
             positionType="absolute"
             positionRight="10"
             positionTop="10">
+            <brls:Box
+                wireframe="false"
+                id="video/osd/next"
+                visibility="gone"
+                hideClickAnimation="true"
+                alignItems="center"
+                justifyContent="center"
+                marginRight="4"
+                height="50"
+                width="50">
+                <SVGImage
+                    id="video/osd/next/icon"
+                    focusable="true"
+                    focusUp="video/osd/next/icon"
+                    focusRight="video/osd/setting/icon"
+                    focusLeft="video/osd/next/icon"
+                    focusDown="video/osd/lock/box"
+                    hideHighlightBackground="true"
+                    highlightCornerRadius="30"
+                    height="26"
+                    width="26"
+                    svg="@res/icon/ico-forward.svg" />
+            </brls:Box>
             <brls:Box
                 wireframe="false"
                 id="video/osd/setting"
@@ -89,6 +114,7 @@
                     focusable="true"
                     focusUp="video/osd/setting/icon"
                     focusRight="video/osd/setting/icon"
+                    focusLeft="video/osd/next/icon"
                     focusDown="video/osd/lock/box"
                     hideHighlightBackground="true"
                     highlightCornerRadius="30"

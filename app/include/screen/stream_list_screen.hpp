@@ -21,9 +21,13 @@ class StreamListScreen : public brls::Box
     // the header, e.g. "Temporada 1 - Episodio 2". `showId`/`posterUrl` are
     // the show's own (not the episode's) id and poster art -- recorded into
     // Continuar Assistindo when a stream is opened, so a series' episodes
-    // all update the same entry instead of one each.
+    // all update the same entry instead of one each. `nextVideoId` (and its
+    // title/subtitle), when not empty, is what DetailScreen already worked
+    // out comes right after this episode -- threaded down to PlayerScreen so
+    // its OSD can offer "Proximo Episodio" without querying anything again.
     StreamListScreen(const std::string& type, const std::string& videoId, const std::string& title,
-        const std::string& subtitle, const std::string& showId, const std::string& posterUrl);
+        const std::string& subtitle, const std::string& showId, const std::string& posterUrl,
+        const std::string& nextVideoId = "", const std::string& nextTitle = "", const std::string& nextSubtitle = "");
     ~StreamListScreen();
 
     // This screen parks focus on itself (setFocusable(true)) while the
@@ -50,6 +54,9 @@ class StreamListScreen : public brls::Box
     std::string subtitle;
     std::string showId;
     std::string posterUrl;
+    std::string nextVideoId;
+    std::string nextTitle;
+    std::string nextSubtitle;
 
     brls::View* loadingGate = nullptr;
     // The list (or the empty-state box), once finish() builds it -- see

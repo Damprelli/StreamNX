@@ -1,5 +1,7 @@
 #include "screen/player_settings_screen.hpp"
 #include "api/mpv_player.hpp"
+#include "utils/mouse.hpp"
+#include "view/ui_kit.hpp"
 
 #include <cstdio>
 
@@ -44,11 +46,8 @@ class SettingRow : public brls::Box
         valueRow->setAxis(brls::Axis::ROW);
         valueRow->setAlignItems(brls::AlignItems::CENTER);
 
-        auto* leftChevron = new brls::Label();
-        leftChevron->setText("‹");
-        leftChevron->setFontSize(20);
-        leftChevron->setTextColor(nvgRGB(110, 120, 140));
-        leftChevron->setMarginRight(10);
+        auto* leftChevron = makeChevron("<");
+        leftChevron->setMarginRight(4);
         valueRow->addView(leftChevron);
 
         auto* valueLabel = new brls::Label();
@@ -59,11 +58,8 @@ class SettingRow : public brls::Box
         valueRow->addView(valueLabel);
         *outValueLabel = valueLabel;
 
-        auto* rightChevron = new brls::Label();
-        rightChevron->setText("›");
-        rightChevron->setFontSize(20);
-        rightChevron->setTextColor(nvgRGB(110, 120, 140));
-        rightChevron->setMarginLeft(10);
+        auto* rightChevron = makeChevron(">");
+        rightChevron->setMarginLeft(4);
         valueRow->addView(rightChevron);
 
         this->addView(valueRow);
@@ -72,6 +68,38 @@ class SettingRow : public brls::Box
             leftHint, brls::BUTTON_LEFT, [onAdjust](brls::View*) { onAdjust(-1); return true; }, false, true);
         this->registerAction(
             rightHint, brls::BUTTON_RIGHT, [onAdjust](brls::View*) { onAdjust(1); return true; }, false, true);
+
+#ifdef STREAMNX_PC_UI
+        // LEFT/RIGHT have no click equivalent -- the chevrons themselves
+        // become their own clickable targets instead (a plain Label has no
+        // BUTTON_A action for makeClickable(view) to reuse, so each gets its
+        // own click action directly).
+        makeClickable(leftChevron, [onAdjust](brls::View*) { onAdjust(-1); return true; });
+        makeClickable(rightChevron, [onAdjust](brls::View*) { onAdjust(1); return true; });
+#endif
+    }
+
+  private:
+    // A small focusable hit target around a "<"/">" label -- bare labels
+    // have no padding to click on comfortably.
+    static brls::Box* makeChevron(const std::string& symbol)
+    {
+        auto* box = new HoverBox();
+        box->setHoverColors(nvgRGBA(0, 0, 0, 0), ui::color("surface_hover"));
+        box->setFocusable(true);
+        box->setDimensions(brls::View::AUTO, brls::View::AUTO);
+        box->setAlignItems(brls::AlignItems::CENTER);
+        box->setJustifyContent(brls::JustifyContent::CENTER);
+        box->setPadding(4, 10, 4, 10);
+        box->setCornerRadius(6);
+
+        auto* label = new brls::Label();
+        label->setText(symbol);
+        label->setFontSize(20);
+        label->setTextColor(nvgRGB(110, 120, 140));
+        box->addView(label);
+
+        return box;
     }
 };
 
@@ -132,7 +160,11 @@ PlayerSettingsScreen::PlayerSettingsScreen()
     this->addView(title);
 
     auto* hint = new brls::Label();
-    hint->setText("Use ← → para ajustar, B para voltar");
+#ifdef STREAMNX_PC_UI
+    hint->setText("Clique nas setas para ajustar  ·  Esc para voltar");
+#else
+    hint->setText("Use < > para ajustar, B para voltar");
+#endif
     hint->setFontSize(14);
     hint->setTextColor(nvgRGB(130, 135, 145));
     hint->setMarginTop(6);
@@ -159,7 +191,14 @@ PlayerSettingsScreen::PlayerSettingsScreen()
     this->addView(speedRow);
     this->addView(subDelayRow);
 
+#ifdef STREAMNX_PC_UI
+    auto* closeButton = ui::button("Fechar", ui::ButtonStyle::Secondary, []() { brls::Application::popActivity(); },
+        ui::icons::close);
+    closeButton->setMarginTop(26);
+    this->addView(closeButton);
+#else
     this->addView(new brls::BottomBar());
+#endif
 
     this->registerAction(
         "Voltar", brls::BUTTON_B, [](brls::View*) {

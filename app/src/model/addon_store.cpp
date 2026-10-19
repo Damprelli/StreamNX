@@ -1,5 +1,6 @@
 #include "model/addon_store.hpp"
 #include "api/stremio_api.hpp"
+#include "api/cloud_sync.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -107,6 +108,14 @@ std::string AddonStore::add(const std::string& rawUrl)
     if (url.empty())
         return "Digite a URL do manifesto do addon.";
 
+    // "torrentio.strem.fun/..." typed without a scheme gets https:// added;
+    // a stremio:// install link (what addon sites' "Install" buttons hand
+    // out) is the same URL over https.
+    if (url.rfind("stremio://", 0) == 0)
+        url = "https://" + url.substr(std::string("stremio://").size());
+    else if (url.find("://") == std::string::npos)
+        url = "https://" + url;
+
     if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0)
         return "A URL precisa comecar com http:// ou https://";
 
@@ -128,6 +137,7 @@ std::string AddonStore::add(const std::string& rawUrl)
 
     this->items.push_back(Addon { url, true });
     this->save();
+    cloud::addonAdded(this->items.back());
     return "";
 }
 
@@ -135,8 +145,10 @@ void AddonStore::remove(size_t index)
 {
     if (index >= this->items.size())
         return;
+    std::string url = this->items[index].url;
     this->items.erase(this->items.begin() + index);
     this->save();
+    cloud::addonRemoved(url);
 }
 
 void AddonStore::toggle(size_t index)
@@ -144,5 +156,16 @@ void AddonStore::toggle(size_t index)
     if (index >= this->items.size())
         return;
     this->items[index].enabled = !this->items[index].enabled;
+    this->save();
+    cloud::addonChanged(this->items[index]);
+}
+
+void AddonStore::replaceAll(std::vector<Addon> newItems)
+{
+    this->loaded = true;
+    this->items  = std::move(newItems);
+    this->items.erase(
+        std::remove_if(this->items.begin(), this->items.end(), [](const Addon& a) { return isCinemeta(a.url); }),
+        this->items.end());
     this->save();
 }

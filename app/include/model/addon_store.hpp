@@ -25,6 +25,10 @@ class AddonStore
     void remove(size_t index);
     void toggle(size_t index);
 
+    // Swaps in the list the profile backend returned (see api/cloud_sync)
+    // and saves it -- without echoing it back to the server.
+    void replaceAll(std::vector<Addon> newItems);
+
   private:
     void save();
 

@@ -19,6 +19,10 @@ class FavoritesStore
     void add(const Favorite& item); // no-op if already present
     void remove(const std::string& id);
 
+    // Swaps in the list the profile backend returned (see api/cloud_sync)
+    // and saves it -- without echoing it back to the server.
+    void replaceAll(std::vector<Favorite> newItems);
+
   private:
     void save();
 

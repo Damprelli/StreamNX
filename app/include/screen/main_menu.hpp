@@ -3,39 +3,57 @@
 #include <borealis.hpp>
 #include <functional>
 #include <string>
+#include <vector>
 
-// The app's shell: a side menu (Sidebar) that exclusively owns navigation
-// while open, next to a content area that swaps screens. Only one thing is
-// ever navigable at a time:
-//   - Menu open: focus is on the Sidebar; RIGHT (or A on an item) enters
-//     the highlighted screen and closes the menu.
-//   - Menu closed: focus is confined to the active screen; navigating past
-//     its left edge does NOT leak back into the (hidden) menu -- only Y or
-//     the screen's own B re-opens it.
+class NavItem;
+
+// The app's shell: a navigation bar next to a content area that swaps
+// screens. Same class, two layouts:
+//
+//  - PC (mouse only): a top bar with the brand and one tab per screen.
+//    Clicking a tab swaps the screen; there is no focus handling at all.
+//
+//  - Switch (gamepad): a fixed icon rail on the left. While it has focus it
+//    widens over the content to show labels; moving UP/DOWN on it switches
+//    screens, RIGHT (or A) enters the screen and collapses it again, and
+//    LEFT at a screen's left edge or B goes back to it. The rail is a plain
+//    Box -- unlike brls::Sidebar (a scrolling frame) it never scrolls, so
+//    the focused item can't be pushed off-screen.
 class MainMenu : public brls::Box
 {
   public:
     MainMenu();
 
-    // Always land on "Home" -- overridden because the generic Box
-    // resolution (last-focused child) isn't reliable before the very first
-    // layout pass.
     brls::View* getDefaultFocus() override;
-
-    // Detects focus actually entering the active screen (vs. still moving
-    // around the Sidebar) so the menu can close itself at that point.
     void onChildFocusGained(brls::View* directChild, brls::View* focusedView) override;
+
+    // Switch: entering the content from the rail / back to the rail.
+    void focusContent();
+    void focusRail();
+    brls::View* contentFocusTarget();
+    brls::View* railFocusTarget();
 
   private:
     using ScreenCreator = std::function<brls::View*(void)>;
 
-    void addScreen(const std::string& label, ScreenCreator creator);
-    void openSidebar();
-    void closeSidebar();
-    void completeInitialFocus(int attemptsLeft);
+    struct Entry
+    {
+        ScreenCreator creator;
+        NavItem* item = nullptr;
+    };
 
-    brls::Sidebar* sidebar   = nullptr;
-    brls::Box* row           = nullptr;
+    void addScreen(const std::string& label, const char* icon, ScreenCreator creator);
+    void showScreen(size_t index);
+    void completeInitialFocus(int attemptsLeft);
+#ifndef STREAMNX_PC_UI
+    void setRailExpanded(bool expanded);
+#endif
+
+    std::vector<Entry> entries;
+    size_t activeIndex       = (size_t)-1;
+    brls::Box* nav           = nullptr; // top bar tabs (PC) / rail (Switch)
+    brls::Box* contentArea   = nullptr;
     brls::View* activeScreen = nullptr;
-    bool sidebarOpen         = true;
+    bool railExpanded        = false;
+    brls::Label* brandLabel  = nullptr; // Switch: shown only while the rail is expanded
 };

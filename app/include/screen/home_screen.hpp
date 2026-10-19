@@ -1,6 +1,7 @@
 #pragma once
 
 #include <borealis.hpp>
+#include <memory>
 
 // The app's Home screen: a "Continuar Assistindo" carousel above a
 // "Favoritos" grid. Built entirely from borealis' own views, filled with
@@ -10,6 +11,7 @@ class HomeScreen : public brls::Box
 {
   public:
     HomeScreen();
+    ~HomeScreen() override;
 
   private:
     void addSectionHeader(brls::Box* content, const std::string& text);
@@ -18,4 +20,5 @@ class HomeScreen : public brls::Box
     void buildContent();
 
     brls::View* loadingGate = nullptr;
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 };

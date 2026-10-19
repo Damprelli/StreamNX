@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=StreamNX
-AppVersion=1.0.0.0
+AppVersion=2.0.0.0
 AppPublisher=StreamNX
 AppPublisherURL=https://github.com/Damprelli/StreamNX
 AppSupportURL=https://github.com/Damprelli/StreamNX
@@ -13,14 +13,15 @@ DefaultGroupName=StreamNX
 AllowNoIcons=yes
 LicenseFile=LICENSE
 OutputDir=build_pc
-OutputBaseFilename=StreamNX-1.0.0-Setup
+OutputBaseFilename=StreamNX-2.0.0-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64
 ArchitecturesAllowed=x64
-//SetupIconFile=resources\img\streamnx.ico
-WizardSmallImageFile=resources\img\streamnx.ico
+SetupIconFile=resources\img\streamnx.ico
+WizardSmallImageFile=resources\img\wizard_small.bmp
+WizardImageFile=resources\img\wizard_large.bmp
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -40,10 +41,10 @@ Source: "build_pc\*.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "resources\*"; DestDir: "{app}\resources"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\StreamNX"; Filename: "{app}\StreamNX.exe"; IconFilename: "{app}\resources\img\borealis_256.png"
+Name: "{group}\StreamNX"; Filename: "{app}\StreamNX.exe"; IconFilename: "{app}\resources\img\streamnx.ico"
 Name: "{group}\Uninstall StreamNX"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\StreamNX"; Filename: "{app}\StreamNX.exe"; IconFilename: "{app}\resources\img\borealis_256.png"; Tasks: desktopicon
-Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\StreamNX"; Filename: "{app}\StreamNX.exe"; IconFilename: "{app}\resources\img\borealis_256.png"; Tasks: quicklaunchicon
+Name: "{autodesktop}\StreamNX"; Filename: "{app}\StreamNX.exe"; IconFilename: "{app}\resources\img\streamnx.ico"; Tasks: desktopicon
+Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\StreamNX"; Filename: "{app}\StreamNX.exe"; IconFilename: "{app}\resources\img\streamnx.ico"; Tasks: quicklaunchicon
 
 [Run]
 Filename: "{app}\StreamNX.exe"; Description: "Launch StreamNX"; Flags: nowait postinstall skipifsilent

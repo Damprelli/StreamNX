@@ -5,6 +5,9 @@
 #include "model/catalog_store.hpp"
 #include "model/favorites_store.hpp"
 #include "api/stremio_api.hpp"
+#include "utils/mouse.hpp"
+#include "view/ui_kit.hpp"
+#include "theme/streamnx_theme.hpp"
 
 #include <cctype>
 #include <cstdlib>
@@ -99,6 +102,39 @@ void SearchScreen::buildContent()
 {
     this->removeView(this->loadingGate);
     this->loadingGate = nullptr;
+
+#ifdef STREAMNX_PC_UI
+    // No footer hint to advertise BUTTON_X on PC -- a real, clickable
+    // button instead. Built here (not the constructor) for the same
+    // reason the X action below is: opening the dialog before resultsBox
+    // exists would have nothing to rebuild into.
+    // Looks like a search field; clicking it (or pressing Enter on it)
+    // opens the text input dialog.
+    auto* searchButton = new HoverBox();
+    searchButton->setFocusable(true);
+    searchButton->setAxis(brls::Axis::ROW);
+    searchButton->setAlignItems(brls::AlignItems::CENTER);
+    searchButton->setWidth(560);
+    searchButton->setHeight(48);
+    searchButton->setPadding(0, 18, 0, 18);
+    searchButton->setCornerRadius(24);
+    searchButton->setBorderThickness(1.0f);
+    searchButton->setBorderColor(ui::color("border"));
+    searchButton->setHoverColors(ui::color("surface"), ui::color("surface_raised"));
+    searchButton->setMarginBottom(18);
+
+    auto* searchIcon = ui::icon(ui::icons::search, 22, ui::color("text_muted"));
+    searchIcon->setMarginRight(12);
+    searchButton->addView(searchIcon);
+    searchButton->addView(ui::label("Buscar filmes e series...", 16, ui::color("text_muted")));
+
+    makeClickable(searchButton, [this](brls::View*) {
+        this->openSearchDialog();
+        return true;
+    });
+
+    this->addView(searchButton);
+#endif
 
     this->resultsHeader = new brls::Label();
     this->resultsHeader->setText("Carregando catalogo...");
@@ -359,7 +395,12 @@ void SearchScreen::rebuildResults(bool resetPaging)
     if (focusWasInList)
         brls::Application::giveFocus(this);
 
+#ifdef STREAMNX_PC_UI
+    float availableWidth = streamnx_theme::contentAreaWidth();
+    fillMediaGridPc(this->resultsBox, page, availableWidth, "Nenhum resultado encontrado.");
+#else
     fillMediaGrid(this->resultsBox, page, RESULTS_PER_ROW, "Nenhum resultado encontrado.");
+#endif
 
     if (hasMore)
     {
@@ -383,6 +424,7 @@ void SearchScreen::rebuildResults(bool resetPaging)
             this->loadMore();
             return true;
         });
+        makeClickable(loadMore);
 
         this->resultsBox->addView(loadMore);
     }

@@ -12,3 +12,5 @@ builddir
 *.suprx
 libromfs-generator
 !.github/
+# StreamNX-Backend session (token)
+profile.json

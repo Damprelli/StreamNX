@@ -1,4 +1,5 @@
 #include "model/continue_watching_store.hpp"
+#include "api/cloud_sync.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -19,16 +20,30 @@ void to_json(nlohmann::json& j, const ContinueWatching& c)
         { "name", c.name },
         { "poster", c.poster },
         { "subtitle", c.subtitle },
+        { "positionSeconds", c.positionSeconds },
+        { "durationSeconds", c.durationSeconds },
+        { "isTorrent", c.isTorrent },
+        { "streamUrl", c.streamUrl },
+        { "torrentInfoHash", c.torrentInfoHash },
+        { "torrentName", c.torrentName },
+        { "torrentTrackers", c.torrentTrackers },
     };
 }
 
 void from_json(const nlohmann::json& j, ContinueWatching& c)
 {
-    c.id       = j.value("id", "");
-    c.type     = j.value("type", "");
-    c.name     = j.value("name", "");
-    c.poster   = j.value("poster", "");
-    c.subtitle = j.value("subtitle", "");
+    c.id              = j.value("id", "");
+    c.type            = j.value("type", "");
+    c.name            = j.value("name", "");
+    c.poster          = j.value("poster", "");
+    c.subtitle        = j.value("subtitle", "");
+    c.positionSeconds = j.value("positionSeconds", 0.0);
+    c.durationSeconds = j.value("durationSeconds", 0.0);
+    c.isTorrent       = j.value("isTorrent", false);
+    c.streamUrl       = j.value("streamUrl", "");
+    c.torrentInfoHash = j.value("torrentInfoHash", "");
+    c.torrentName     = j.value("torrentName", "");
+    c.torrentTrackers = j.value("torrentTrackers", std::vector<std::string> {});
 }
 
 ContinueWatchingStore& ContinueWatchingStore::instance()
@@ -90,6 +105,7 @@ void ContinueWatchingStore::touch(const ContinueWatching& item)
         this->items.resize(MAX_ITEMS);
 
     this->save();
+    cloud::continueTouched(item);
 }
 
 void ContinueWatchingStore::remove(const std::string& id)
@@ -98,4 +114,30 @@ void ContinueWatchingStore::remove(const std::string& id)
         std::remove_if(this->items.begin(), this->items.end(), [&](const ContinueWatching& c) { return c.id == id; }),
         this->items.end());
     this->save();
+    cloud::continueRemoved(id);
+}
+
+void ContinueWatchingStore::replaceAll(std::vector<ContinueWatching> newItems)
+{
+    this->loaded = true;
+    this->items  = std::move(newItems);
+    if (this->items.size() > MAX_ITEMS)
+        this->items.resize(MAX_ITEMS);
+    this->save();
+}
+
+void ContinueWatchingStore::updateProgress(const std::string& id, double positionSeconds, double durationSeconds)
+{
+    for (auto& c : this->items)
+    {
+        if (c.id != id)
+            continue;
+
+        bool finished          = durationSeconds > 0 && positionSeconds / durationSeconds > 0.95;
+        c.positionSeconds = finished ? 0.0 : positionSeconds;
+        c.durationSeconds = durationSeconds;
+        this->save();
+        cloud::continueProgress(c);
+        return;
+    }
 }

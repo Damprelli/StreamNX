@@ -16,7 +16,7 @@ include(${BOREALIS_LIBRARY}/cmake/toolchain.cmake)
 
 # project info
 project(StreamNX)
-set(VERSION_MAJOR "1")
+set(VERSION_MAJOR "2")
 set(VERSION_MINOR "0")
 set(VERSION_ALTER "0")
 set(VERSION_BUILD "0")
@@ -27,6 +27,23 @@ set(PROJECT_RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 if (USE_LIBROMFS)
     add_libromfs(${PROJECT_NAME} ${PROJECT_RESOURCES})
+endif ()
+
+# PC build is a mouse-first desktop app with its own layout (STREAMNX_PC_UI:
+# top tab bar, hover, clickable everything) and no gamepad at all
+# (BRLS_MOUSE_ONLY: no gamepad, no keyboard-as-gamepad navigation, no focus
+# highlight -- see those blocks in borealis' glfw_input.cpp /
+# application.cpp / edit_text_dialog.cpp). Set before add_subdirectory(library)
+# so borealis itself is built with it too.
+#
+# -DSTREAMNX_TV_UI=ON builds the PC with the Switch interface instead (icon
+# rail, gamepad/keyboard navigation) -- for developing/testing the Switch
+# layout without a console.
+option(STREAMNX_TV_UI "PC build with the Switch (TV/gamepad) interface, for testing" OFF)
+if (PLATFORM_DESKTOP AND WIN32 AND NOT STREAMNX_TV_UI)
+    add_compile_definitions(BRLS_MOUSE_ONLY STREAMNX_PC_UI)
+elseif (STREAMNX_TV_UI)
+    add_compile_definitions(STREAMNX_TV_PREVIEW)
 endif ()
 
 add_subdirectory(library)
@@ -73,14 +90,44 @@ elseif (PLATFORM_SWITCH)
     list(APPEND APP_PLATFORM_LIB PkgConfig::CURL)
     pkg_check_modules(MPV REQUIRED IMPORTED_TARGET mpv)
     list(APPEND APP_PLATFORM_LIB PkgConfig::MPV)
+elseif (PLATFORM_ANDROID)
+    # No portlib/pacman equivalent for Android -- curl, mpv (+ffmpeg), webp
+    # and libtorrent-rasterbar all need to be cross-compiled for the NDK by
+    # hand and installed under this prefix, one subfolder per ABI (the NDK
+    # toolchain file sets ANDROID_ABI itself, e.g. "arm64-v8a"). Layout
+    # mirrors a normal install prefix: android-libs/<ABI>/{include,lib}.
+    set(ANDROID_LIBS_PREFIX "${CMAKE_SOURCE_DIR}/android-libs/${ANDROID_ABI}")
+
+    find_path(CURL_INCLUDE_DIR curl/curl.h HINTS "${ANDROID_LIBS_PREFIX}/include" REQUIRED)
+    find_library(CURL_LIBRARY NAMES curl HINTS "${ANDROID_LIBS_PREFIX}/lib" REQUIRED)
+    list(APPEND APP_PLATFORM_INCLUDE ${CURL_INCLUDE_DIR})
+    list(APPEND APP_PLATFORM_LIB ${CURL_LIBRARY})
+
+    find_path(MPV_INCLUDE_DIR mpv/client.h HINTS "${ANDROID_LIBS_PREFIX}/include" REQUIRED)
+    find_library(MPV_LIBRARY NAMES mpv HINTS "${ANDROID_LIBS_PREFIX}/lib" REQUIRED)
+    list(APPEND APP_PLATFORM_INCLUDE ${MPV_INCLUDE_DIR})
+    list(APPEND APP_PLATFORM_LIB ${MPV_LIBRARY})
 endif ()
 
 # borealis' own image loading (stb_image) can't decode WebP -- some poster
 # CDNs (RPDB in particular) serve it, which otherwise just leaves those
 # cards on their placeholder forever. Optional: falls back to stb_image-only
 # (still handles the common JPEG/PNG case) if libwebp isn't available.
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(WEBP QUIET libwebp)
+#
+# Not REQUIRED: the NDK's own toolchain has no pkg-config wrapper set up by
+# default (unlike devkitPro's Switch.cmake), so find_package(PkgConfig)
+# would otherwise fail the whole configure step on Android before this
+# optional dependency even gets a chance to be treated as optional.
+find_package(PkgConfig)
+if (PLATFORM_ANDROID)
+    find_path(WEBP_INCLUDE_DIRS webp/decode.h HINTS "${ANDROID_LIBS_PREFIX}/include")
+    find_library(WEBP_LIBRARIES NAMES webp HINTS "${ANDROID_LIBS_PREFIX}/lib")
+    if (WEBP_INCLUDE_DIRS AND WEBP_LIBRARIES)
+        set(WEBP_FOUND TRUE)
+    endif ()
+elseif (PkgConfig_FOUND)
+    pkg_check_modules(WEBP QUIET libwebp)
+endif ()
 if (WEBP_FOUND)
     message(STATUS "Found libwebp: ${WEBP_INCLUDE_DIRS}")
     list(APPEND APP_PLATFORM_OPTION -DUSE_WEBP)
@@ -97,16 +144,39 @@ if (PLATFORM_DESKTOP)
     pkg_check_modules(LIBTORRENT QUIET libtorrent-rasterbar)
     if (LIBTORRENT_FOUND)
         message(STATUS "Found libtorrent-rasterbar: ${LIBTORRENT_INCLUDE_DIRS}")
-        list(APPEND APP_PLATFORM_OPTION -DUSE_LIBTORRENT -DTORRENT_USE_OPENSSL -DTORRENT_DISABLE_RTC)
+        list(APPEND APP_PLATFORM_OPTION -DUSE_LIBTORRENT -DUSE_TORRENT -DTORRENT_USE_OPENSSL -DTORRENT_DISABLE_RTC)
         list(APPEND APP_PLATFORM_INCLUDE ${LIBTORRENT_INCLUDE_DIRS})
         list(APPEND APP_PLATFORM_LIB ${LIBTORRENT_LIBRARIES})
         link_directories(${LIBTORRENT_LIBRARY_DIRS})
+        if (WIN32)
+            list(APPEND APP_PLATFORM_LIB crypt32)
+        endif ()
     else ()
         message(STATUS "libtorrent-rasterbar not found -- torrent downloads disabled")
     endif ()
 elseif (PLATFORM_SWITCH)
-    # Switch support for libtorrent would require devkitPro portlib
-    # For now, only desktop has torrent support
+    # libtorrent needs Boost (boost::asio as its network transport), and
+    # there's no Boost portlib for the Switch -- cross-compiling it from
+    # scratch for devkitA64/libnx isn't documented as ever having worked (see
+    # devkitPro/pacman-packages#90). pipensx_bt (library/pipensx-bt, added
+    # via add_subdirectory in library/CMakeLists.txt) is the BitTorrent
+    # engine the pipensx homebrew ships and validates on real Switch
+    # hardware -- its own peer wire/piece manager/tracker/DHT, needing only
+    # libcurl (tracker HTTP announce, already linked above for mpv/ffmpeg),
+    # miniupnpc (port mapping) and mbedtls' bignum module (MSE key exchange).
+    find_library(MINIUPNPC_LIBRARY miniupnpc HINTS ${DEVKITPRO}/portlibs/switch/lib)
+    find_library(MBEDCRYPTO_LIBRARY mbedcrypto HINTS ${DEVKITPRO}/portlibs/switch/lib)
+    if (NOT MINIUPNPC_LIBRARY)
+        message(FATAL_ERROR "miniupnpc not found in ${DEVKITPRO}/portlibs/switch/lib -- required by pipensx_bt")
+    endif ()
+    if (NOT MBEDCRYPTO_LIBRARY)
+        message(FATAL_ERROR "mbedcrypto not found in ${DEVKITPRO}/portlibs/switch/lib -- required by pipensx_bt (see scripts/switch/mbedtls)")
+    endif ()
+
+    list(APPEND APP_PLATFORM_OPTION -DUSE_PIPENSX_BT -DUSE_TORRENT)
+    # Link order matters here (GNU ld resolves left to right): pipensx_bt's
+    # own symbols reference all of these.
+    list(APPEND APP_PLATFORM_LIB pipensx_bt ${MINIUPNPC_LIBRARY} ${MBEDCRYPTO_LIBRARY})
 endif ()
 
 # setting src and include
@@ -134,6 +204,10 @@ elseif (PLATFORM_SWITCH)
         nx m
     )
     list(APPEND MAIN_SRC ${BOREALIS_LIBRARY}/lib/platforms/switch/switch_wrapper.c)
+elseif (PLATFORM_ANDROID)
+    # Nothing StreamNX-specific needed here -- borealis' own CMakeLists.txt
+    # (library/borealis/library/CMakeLists.txt's own PLATFORM_ANDROID branch)
+    # already links SDL2/SDL2main and the EGL/GLESv2 libs this platform needs.
 endif ()
 
 

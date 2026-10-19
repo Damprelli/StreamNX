@@ -26,7 +26,14 @@ cada filme ou episódio.
 - **Detalhes**: tenta buscar metadados (sinopse, elenco, temporadas/
   episódios) em cada addon habilitado, na ordem, até um responder.
 - **Streams**: lista o que cada addon encontrou para aquele filme/episódio,
-  com selos de qualidade/HDR extraídos do texto que o addon devolveu.
+  com selos de qualidade/HDR extraídos do texto que o addon devolveu — links
+  diretos e torrents aparecem em seções separadas, já que um torrent precisa
+  de um passo de download antes de poder tocar.
+- **Torrents**: addons que respondem com um `infoHash` (como o
+  [Torrentio](https://torrentio.strem.fun/)) em vez de uma URL tocam do mesmo
+  jeito — o app baixa o maior arquivo do torrent (o vídeo, tipicamente) para
+  um cache local e só abre o player quando o download termina. O cache é
+  limpo automaticamente ao sair do player, concluído ou não.
 - **Player**: o [mpv](https://mpv.io/) roda embutido, renderizando direto
   no framebuffer do próprio app (OpenGL no PC, deko3d no Switch) — o vídeo
   literalmente faz parte da mesma janela/tela, não é uma janela ou processo
@@ -46,6 +53,25 @@ console (Tegra X1) sempre que possível, em vez de decodificar tudo pela CPU.
 
 Pré-requisitos: [MSYS2](https://www.msys2.org/) com o toolchain mingw64, e
 os pacotes `mingw-w64-x86_64-{cmake,ninja,curl,mpv,libwebp}`.
+
+Suporte a torrent (opcional, mas habilitado automaticamente se encontrado)
+usa o [libtorrent-rasterbar](https://www.libtorrent.org/), que não tem
+pacote pronto no MSYS2 com a config certa — precisa ser compilado a partir
+do código-fonte, com o suporte a WebRTC desligado (exige `libdatachannel`,
+que não está disponível no MSYS2, e não é necessário: RTC é só um transporte
+alternativo de dados que o BitTorrent normal não usa):
+
+```bash
+git clone https://github.com/arvidn/libtorrent.git --branch RC_2_0
+cd libtorrent && git submodule update --init --recursive
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -Dwebrtc=OFF \
+    -DCMAKE_INSTALL_PREFIX=/mingw64
+cmake --build build -j8
+cmake --install build
+```
+
+Com isso instalado (ou não — o app compila normalmente sem ele, só sem
+suporte a torrent), o app em si compila normal:
 
 ```bash
 cmake -S . -B build_pc -DPLATFORM_DESKTOP=ON
@@ -83,8 +109,31 @@ devkitPro só vem com o backend OpenGL). Baixe o mpv, e compile com meson
 usando `-Ddeko3d=enabled -Dgl=disabled` (veja
 `app/src/api/mpv_player.cpp` para o restante das flags relevantes).
 
-Com tudo isso instalado nos portlibs do devkitPro, o app em si compila
-normal:
+Suporte a torrent no Switch usa a engine BitTorrent própria do projeto
+pipensx (vendorizada em `library/pipensx-bt`, sem
+alteração de conteúdo além de reposicionamento de arquivos) em vez do
+libtorrent-rasterbar do desktop — libtorrent depende de Boost (boost::asio
+como transporte de rede), e não existe portlib de Boost para o Switch, nem
+relato de alguém tendo conseguido cross-compilá-lo para devkitA64/libnx
+([devkitPro/pacman-packages#90](https://github.com/devkitPro/pacman-packages/issues/90)).
+A engine do pipensx (peer wire, piece manager, tracker announce, DHT, MSE —
+tudo próprio, sem libtorrent/libtransmission) é o que aquele homebrew já usa
+de verdade em produção no Switch, então não depende de nenhum port de
+terceiros nem de portlib externo: compila como parte do próprio CMake do
+StreamNX (`library/pipensx-bt/CMakeLists.txt`, `add_subdirectory` em
+`library/CMakeLists.txt`, guardado por `PLATFORM_SWITCH`).
+
+Só duas dependências de portlib do devkitPro além disso: `miniupnpc`
+(mapeamento de porta) e `mbedcrypto` (expoenciação modular do MSE — mesmo
+mbedTLS já buildado por `scripts/switch/mbedtls`, só reaproveitado aqui).
+`app/src/api/magnet_resolver_switch.cpp` (adaptado, não copiado 1:1, do
+`magnet_resolver.cpp` do pipensx) resolve infoHash+trackers em um `.torrent`
+completo via tracker announce + DHT + BEP-9 (`ut_metadata`), e
+`app/src/api/download_manager_switch.cpp` (atrás de `USE_PIPENSX_BT`) drives
+o download em si, na mesma interface pública que o `download_manager.cpp`
+do desktop usa para libtorrent.
+
+Com tudo isso, o app em si compila normal:
 
 ```bash
 cmake -S . -B build_switch -DPLATFORM_SWITCH=ON -DUSE_DEKO3D=ON -DCMAKE_DEPENDS_USE_COMPILER=OFF
@@ -111,6 +160,13 @@ StreamNX é construído em cima de bibliotecas de código aberto:
   **[libcurl](https://curl.se/)** — TLS/HTTPS para addons e streams.
 - **[libwebp](https://chromium.googlesource.com/webm/libwebp)** — decodifica
   capas que vêm em formato WebP.
+- **[libtorrent-rasterbar](https://www.libtorrent.org/)** — protocolo
+  BitTorrent no Desktop, para streams que vêm como torrent (Torrentio e
+  afins) em vez de link direto.
+- **[libtransmission](https://github.com/transmission/transmission)** e o
+  port **[nxTransmission](https://github.com/t-flo/nxTransmission)** —
+  o mesmo suporte a torrent no Switch, via um backend diferente do
+  Desktop (veja "Como compilar" acima para o porquê).
 - **[devkitPro](https://devkitpro.org/)** (devkitA64/libnx) — toolchain de
   desenvolvimento homebrew para Nintendo Switch.
 - O protocolo de addons e o catálogo **[Stremio](https://www.stremio.com/)**

@@ -30,6 +30,11 @@ class VideoView : public brls::Box
     void setTitie(const std::string& title);
 
     brls::VoidEvent* getSettingEvent() { return &this->settingEvent; }
+    brls::VoidEvent* getNextEpisodeEvent() { return &this->nextEpisodeEvent; }
+
+    // Shows/hides the "Proximo Episodio" OSD button -- gone by default
+    // (movies, or the last episode PlayerScreen knows about).
+    void setNextEpisodeAvailable(bool available);
 
     void showOSD(bool autoHide = true);
 
@@ -38,6 +43,7 @@ class VideoView : public brls::Box
   private:
     BRLS_BIND(brls::Label, titleLabel, "video/osd/title");
     BRLS_BIND(brls::Box, btnSetting, "video/osd/setting");
+    BRLS_BIND(brls::Box, btnNextEpisode, "video/osd/next");
     BRLS_BIND(brls::Box, btnToggle, "video/osd/toggle");
     BRLS_BIND(brls::Box, btnVideoSpeed, "video/speed/box");
     BRLS_BIND(brls::Box, btnVolume, "video/osd/volume");
@@ -79,6 +85,7 @@ class VideoView : public brls::Box
     static void disableDimming(bool disable);
 
     brls::VoidEvent settingEvent;
+    brls::VoidEvent nextEpisodeEvent;
     View* lastFocusedView = nullptr;
 
     bool isOsdShown         = false;
@@ -101,4 +108,14 @@ class VideoView : public brls::Box
     size_t volumeIter = 0;
     int volumeInit     = 0;
     float brightnessInit = 0;
+
+#ifdef STREAMNX_PC_UI
+    // PC: desktop-player keyboard shortcuts (no gamepad there) and showing
+    // the OSD whenever the mouse moves.
+    void onKey(const brls::KeyState& key);
+    bool exitFullscreen();
+    brls::Event<brls::KeyState>::Subscription keySubscription;
+    brls::Point lastCursor = brls::Point(-1, -1);
+    int volumeBeforeMute   = -1;
+#endif
 };

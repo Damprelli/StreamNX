@@ -78,6 +78,9 @@ struct StreamEntry
     std::string title;       // usually filename/quality/codec details
     std::string url;         // direct playable URL, when the addon provides one
     std::string infoHash;    // torrent info hash, when the addon provides a torrent instead
+    std::vector<std::string> trackers; // announce URLs from "sources" -- without these, finding
+                                        // peers for the infoHash above relies on DHT alone, which
+                                        // can take much longer (or fail behind restrictive NAT)
     std::string addonName;   // filled by the caller, not present in the JSON
 };
 

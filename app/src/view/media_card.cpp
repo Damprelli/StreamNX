@@ -1,6 +1,8 @@
 #include "view/media_card.hpp"
 #include "screen/detail_screen.hpp"
 #include "api/image_cache.hpp"
+#include "utils/mouse.hpp"
+#include "utils/hover.hpp"
 
 #include <cctype>
 
@@ -28,7 +30,7 @@ std::string firstLetter(const std::string& title)
 
 } // namespace
 
-MediaCard::MediaCard(const MediaItem& item)
+MediaCard::MediaCard(const MediaItem& item, std::function<bool(brls::View*)> onOpen)
 {
     this->inflateFromXMLRes("xml/views/media_card.xml");
 
@@ -43,7 +45,7 @@ MediaCard::MediaCard(const MediaItem& item)
         this->subtitleLabel->setText(item.subtitle);
 
     if (item.rating > 0.0f)
-        this->ratingLabel->setText("★ " + std::to_string(item.rating).substr(0, 3));
+        this->ratingLabel->setText(std::to_string(item.rating).substr(0, 3));
     else
         this->ratingLabel->setVisibility(brls::Visibility::INVISIBLE);
 
@@ -69,19 +71,36 @@ MediaCard::MediaCard(const MediaItem& item)
         this->progressTrack->setVisibility(brls::Visibility::GONE);
     }
 
-    std::string title = item.title;
-    std::string id     = item.id;
-    std::string type   = item.type;
-    this->registerAction("Abrir", brls::BUTTON_A, [id, type, title](brls::View*) {
-        if (id.empty() || type.empty())
-            brls::Application::notify(title);
-        else
-            brls::Application::pushActivity(new brls::Activity(new DetailScreen(id, type, title)));
-        return true;
+    if (onOpen)
+    {
+        this->registerAction("Abrir", brls::BUTTON_A, onOpen);
+    }
+    else
+    {
+        std::string title = item.title;
+        std::string id     = item.id;
+        std::string type   = item.type;
+        this->registerAction("Abrir", brls::BUTTON_A, [id, type, title](brls::View*) {
+            if (id.empty() || type.empty())
+                brls::Application::notify(title);
+            else
+                brls::Application::pushActivity(new brls::Activity(new DetailScreen(id, type, title)));
+            return true;
+        });
+    }
+    makeClickable(this);
+
+    // PC: lift the card and outline the poster under the mouse.
+    brls::Box* posterBox = this->posterBox;
+    hover::track(this, [this, posterBox](bool hovered) {
+        posterBox->setBorderColor(brls::Application::getTheme().getColor("streamnx/accent"));
+        posterBox->setBorderThickness(hovered ? 3.0f : 0.0f);
+        this->setTranslationY(hovered ? -4.0f : 0.0f);
     });
 }
 
 MediaCard::~MediaCard()
 {
+    hover::forget(this);
     *this->alive = false;
 }

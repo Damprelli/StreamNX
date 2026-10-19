@@ -48,6 +48,11 @@ class MpvPlayer
     void loadUrl(const std::string& url);
     void togglePause();
     void seekRelative(int seconds);
+    // Absolute position in seconds -- used to resume a "Continuar
+    // Assistindo" entry, where the saved position is a duration, not a
+    // fraction (seekAbsolutePercent needs mpv to already know the total
+    // duration; this doesn't).
+    void seekAbsolute(double seconds);
     void stop();
     bool isPaused() const { return paused; }
     bool isValid() const { return mpv != nullptr; }
@@ -91,6 +96,7 @@ class MpvPlayer
 
     void ensureInitialized();
     void pumpEvents();
+    void logVideoInfo(const char* when);
 
     static void onWakeup(void* self);
     static void onRenderUpdate(void* self);
@@ -99,6 +105,13 @@ class MpvPlayer
     mpv_render_context* renderCtx = nullptr;
     bool paused                   = false;
     int lastRenderError           = 0;
+
+    // Most recent ERROR-level line mpv logged (MPV_EVENT_LOG_MESSAGE) since
+    // the last loadUrl() -- mpv_error_string() on its own is a generic enum
+    // name ("Loading failed."); this is what actually says *why* (e.g.
+    // "Failed to recognize file format" / "Cannot find codec matching
+    // selected id"), and is folded into the message passed to onError.
+    std::string lastErrorLog;
 
 #if defined(BOREALIS_USE_DEKO3D)
     // mpv writes into the SAME framebuffer image borealis is about to

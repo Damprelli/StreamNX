@@ -72,9 +72,19 @@ VideoView::VideoView()
 
     this->input = brls::Application::getPlatform()->getInputManager();
 
+#ifdef STREAMNX_PC_UI
+    this->keySubscription = this->input->getKeyboardKeyStateChanged()->subscribe(
+        [this](brls::KeyState key) { this->onKey(key); });
+#endif
+
     this->registerAction(
         "Voltar", brls::BUTTON_B,
         [this](brls::View* view) {
+#ifdef STREAMNX_PC_UI
+            // Esc on PC: leave fullscreen first, like any desktop player.
+            if (this->exitFullscreen())
+                return true;
+#endif
             if (isOsdLock)
             {
                 this->toggleOSD();
@@ -123,6 +133,12 @@ VideoView::VideoView()
         return true;
     });
     this->btnSetting->addGestureRecognizer(new brls::TapGestureRecognizer(this->btnSetting));
+
+    this->btnNextEpisode->registerClickAction([this](brls::View* view) {
+        this->nextEpisodeEvent.fire();
+        return true;
+    });
+    this->btnNextEpisode->addGestureRecognizer(new brls::TapGestureRecognizer(this->btnNextEpisode));
 
     this->registerAction(
         "Bloquear", brls::BUTTON_X,
@@ -299,11 +315,92 @@ VideoView::VideoView()
 VideoView::~VideoView()
 {
     disableDimming(false);
+#ifdef STREAMNX_PC_UI
+    this->input->getKeyboardKeyStateChanged()->unsubscribe(this->keySubscription);
+    this->exitFullscreen();
+#endif
 }
+
+#ifdef STREAMNX_PC_UI
+namespace
+{
+bool g_fullscreen = false;
+}
+
+bool VideoView::exitFullscreen()
+{
+    if (!g_fullscreen)
+        return false;
+    g_fullscreen = false;
+    brls::Application::getPlatform()->getVideoContext()->fullScreen(false);
+    return true;
+}
+
+void VideoView::onKey(const brls::KeyState& key)
+{
+    if (!key.pressed)
+        return;
+    // Only while the player itself is on top -- not under its settings
+    // panel or a dialog.
+    auto stack = brls::Application::getActivitiesStack();
+    if (stack.empty() || this->getParentActivity() != stack.back())
+        return;
+
+    auto& mpv = MpvPlayer::instance();
+    switch (key.key)
+    {
+        case brls::BRLS_KBD_KEY_SPACE:
+        case brls::BRLS_KBD_KEY_K:
+            mpv.togglePause();
+            this->showOSD(true);
+            break;
+        // Same seek preview + delayed apply the gamepad's LB/RB use, so
+        // tapping an arrow a few times lands on the sum.
+        case brls::BRLS_KBD_KEY_LEFT:
+            this->seekingRange -= 10;
+            this->requestSeeking((int)this->seekingRange);
+            break;
+        case brls::BRLS_KBD_KEY_RIGHT:
+            this->seekingRange += 10;
+            this->requestSeeking((int)this->seekingRange);
+            break;
+        case brls::BRLS_KBD_KEY_UP:
+            this->requestVolume(std::min(100, mpv.getVolume() + 5));
+            break;
+        case brls::BRLS_KBD_KEY_DOWN:
+            this->requestVolume(std::max(0, mpv.getVolume() - 5));
+            break;
+        case brls::BRLS_KBD_KEY_M:
+            if (this->volumeBeforeMute >= 0)
+            {
+                this->requestVolume(this->volumeBeforeMute);
+                this->volumeBeforeMute = -1;
+            }
+            else
+            {
+                this->volumeBeforeMute = mpv.getVolume();
+                this->requestVolume(0);
+            }
+            break;
+        case brls::BRLS_KBD_KEY_F:
+        case brls::BRLS_KBD_KEY_F11:
+            g_fullscreen = !g_fullscreen;
+            brls::Application::getPlatform()->getVideoContext()->fullScreen(g_fullscreen);
+            break;
+        default:
+            break;
+    }
+}
+#endif
 
 void VideoView::setTitie(const std::string& title)
 {
     this->titleLabel->setText(title);
+}
+
+void VideoView::setNextEpisodeAvailable(bool available)
+{
+    this->btnNextEpisode->setVisibility(available ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
 }
 
 void VideoView::requestSeeking(int seek, int delay)
@@ -558,6 +655,16 @@ void VideoView::draw(NVGcontext* vg, float x, float y, float w, float h, brls::S
     auto& mpv = MpvPlayer::instance();
     if (!mpv.isValid())
         return;
+
+#ifdef STREAMNX_PC_UI
+    // Desktop players show their controls as soon as the mouse moves.
+    brls::RawMouseState mouse;
+    this->input->updateMouseStates(&mouse);
+    if (this->lastCursor.x >= 0 &&
+        (mouse.position.x != this->lastCursor.x || mouse.position.y != this->lastCursor.y) && !this->isOsdShown)
+        this->showOSD(true);
+    this->lastCursor = mouse.position;
+#endif
 
     double duration = mpv.getDuration();
     double position = mpv.getPosition();

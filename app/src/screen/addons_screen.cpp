@@ -3,6 +3,9 @@
 #include "model/catalog_store.hpp"
 #include "view/loading_gate.hpp"
 #include "api/stremio_api.hpp"
+#include "utils/mouse.hpp"
+#include "view/ui_kit.hpp"
+#include "theme/streamnx_theme.hpp"
 
 #include <memory>
 
@@ -25,7 +28,7 @@ std::string hostLabel(const std::string& url)
 
 // One configured addon: host name + enabled tag on top, full URL below.
 // A on the row toggles enabled/disabled; RB removes it.
-class AddonRow : public brls::Box
+class AddonRow : public HoverBox
 {
   public:
     AddonRow(const std::string& url, bool enabled, std::function<void()> onToggle, std::function<void()> onRemove)
@@ -49,7 +52,24 @@ class AddonRow : public brls::Box
         this->setPadding(14, 20, 14, 20);
         this->setMarginBottom(10);
         this->setCornerRadius(8);
-        this->setBackgroundColor(nvgRGB(26, 29, 36));
+        this->setHoverColors(ui::color("surface"), ui::color("surface_raised"));
+
+        // Row axis so a PC-only "Remover" button (see below) can sit as a
+        // sibling of -- not nested inside -- the part that toggles
+        // enabled/disabled on click: borealis' tap gesture bubbles up to
+        // every ancestor that has its own recognizer with no way to
+        // "consume" it, so a clickable child inside a clickable parent
+        // would fire both actions on the same click.
+        auto* outer = new brls::Box();
+        outer->setAxis(brls::Axis::ROW);
+        outer->setDimensions(brls::View::AUTO, brls::View::AUTO);
+        this->addView(outer);
+
+        auto* toggleArea = new brls::Box();
+        toggleArea->setAxis(brls::Axis::COLUMN);
+        toggleArea->setFocusable(true);
+        toggleArea->setGrow(1.0f);
+        outer->addView(toggleArea);
 
         auto* topRow = new brls::Box();
         topRow->setAxis(brls::Axis::ROW);
@@ -66,14 +86,14 @@ class AddonRow : public brls::Box
         status->setTextColor(enabled ? nvgRGB(110, 220, 130) : nvgRGB(150, 150, 150));
         topRow->addView(status);
 
-        this->addView(topRow);
+        toggleArea->addView(topRow);
 
         auto* urlLabel = new brls::Label();
         urlLabel->setText(url);
         urlLabel->setFontSize(13);
         urlLabel->setTextColor(nvgRGB(140, 140, 150));
         urlLabel->setMarginTop(4);
-        this->addView(urlLabel);
+        toggleArea->addView(urlLabel);
 
         // Whether the URL is enabled/disabled says nothing about whether it
         // actually answers -- probe it the same way a real client would
@@ -84,16 +104,16 @@ class AddonRow : public brls::Box
         netStatus->setFontSize(13);
         netStatus->setTextColor(nvgRGB(180, 160, 90));
         netStatus->setMarginTop(6);
-        this->addView(netStatus);
+        toggleArea->addView(netStatus);
 
         stremio::fetchManifest(
             url, this->rowAlive,
             [netStatus](stremio::ManifestInfo) {
-                netStatus->setText("✓ Online");
+                netStatus->setText("Online");
                 netStatus->setTextColor(nvgRGB(110, 220, 130));
             },
             [netStatus](std::string) {
-                netStatus->setText("✗ Indisponivel");
+                netStatus->setText("Indisponivel");
                 netStatus->setTextColor(nvgRGB(220, 90, 90));
             });
 
@@ -105,6 +125,18 @@ class AddonRow : public brls::Box
             onRemove();
             return true;
         });
+        makeClickable(toggleArea, [onToggle](brls::View*) {
+            onToggle();
+            return true;
+        });
+
+#ifdef STREAMNX_PC_UI
+        // RB has no click equivalent -- a real, visible button instead.
+        auto* removeButton = ui::button("Remover", ui::ButtonStyle::Danger, onRemove, ui::icons::trash);
+        removeButton->setMarginLeft(12);
+
+        outer->addView(removeButton);
+#endif
     }
 };
 
@@ -112,7 +144,7 @@ class AddonRow : public brls::Box
 // variants -- see catalog_store.cpp). Simpler than AddonRow: no manifest to
 // probe, no removing -- just on/off, since it's a fixed, known set rather
 // than something the user pastes in.
-class CatalogRow : public brls::Box
+class CatalogRow : public HoverBox
 {
   public:
     CatalogRow(const std::string& title, bool enabled, std::function<void()> onToggle)
@@ -124,7 +156,7 @@ class CatalogRow : public brls::Box
         this->setPadding(14, 20, 14, 20);
         this->setMarginBottom(10);
         this->setCornerRadius(8);
-        this->setBackgroundColor(nvgRGB(26, 29, 36));
+        this->setHoverColors(ui::color("surface"), ui::color("surface_raised"));
 
         auto* titleLabel = new brls::Label();
         titleLabel->setText(title);
@@ -141,6 +173,7 @@ class CatalogRow : public brls::Box
             onToggle();
             return true;
         });
+        makeClickable(this);
     }
 };
 
@@ -160,12 +193,14 @@ AddonsScreen::AddonsScreen()
     title->setMarginBottom(8);
     this->addView(title);
 
+#ifndef STREAMNX_PC_UI
     auto* hint = new brls::Label();
     hint->setText("Pressione X para adicionar um addon pela URL do manifesto.");
     hint->setFontSize(15);
     hint->setTextColor(nvgRGB(150, 150, 150));
     hint->setMarginBottom(20);
     this->addView(hint);
+#endif
 
     // The list (and the X-to-add hint) only appear once "loaded" -- see
     // buildContent(). Reading the config file is quick, but this keeps
@@ -179,6 +214,15 @@ void AddonsScreen::buildContent()
 {
     this->removeView(this->loadingGate);
     this->loadingGate = nullptr;
+
+#ifdef STREAMNX_PC_UI
+    auto* addButton = ui::button("Adicionar Addon", ui::ButtonStyle::Primary, [this]() { this->openAddDialog(); },
+        ui::icons::add);
+    addButton->setAlignSelf(brls::AlignSelf::FLEX_START);
+    addButton->setMarginBottom(20);
+
+    this->addView(addButton);
+#endif
 
     auto* scroll = new brls::ScrollingFrame();
     scroll->setGrow(1.0f);
@@ -239,7 +283,7 @@ void AddonsScreen::openAddDialog()
                 brls::Application::notify(error);
             this->rebuildList();
         },
-        "Adicionar Addon", "Cole a URL do manifesto (ex: https://addon.exemplo/manifest.json)", 256, "");
+        "Adicionar Addon", "Cole a URL do manifesto (ex: addon.exemplo/manifest.json -- o https:// e opcional)", 256, "");
 }
 
 void AddonsScreen::rebuildList()

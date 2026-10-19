@@ -25,6 +25,6 @@ BEGIN
     END
 END
 
-101 ICON DISCARDABLE "${CMAKE_SOURCE_DIR}/app/platform/win32/borealis.ico"
+101 ICON DISCARDABLE "${CMAKE_SOURCE_DIR}/resources/img/streamnx.ico"
 
 1 24 "${CMAKE_SOURCE_DIR}/app/platform/win32/resource.manifest"

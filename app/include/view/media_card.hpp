@@ -2,6 +2,7 @@
 
 #include <borealis.hpp>
 
+#include <functional>
 #include <memory>
 
 #include "model/media_item.hpp"
@@ -13,7 +14,10 @@
 class MediaCard : public brls::Box
 {
   public:
-    explicit MediaCard(const MediaItem& item);
+    // `onOpen`, when given, replaces the default "open DetailScreen for
+    // item.id/item.type" action -- used by Continue Watching to resume
+    // playback directly instead of going through the detail page again.
+    explicit MediaCard(const MediaItem& item, std::function<bool(brls::View*)> onOpen = nullptr);
     ~MediaCard();
 
   private:

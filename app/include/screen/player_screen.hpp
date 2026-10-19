@@ -5,6 +5,8 @@
 #include <memory>
 #include <string>
 
+#include "model/playback_context.hpp"
+
 class VideoView;
 
 // Full-screen playback: a full-screen PlayerView (raw MpvPlayer::draw(), no
@@ -15,9 +17,10 @@ class VideoView;
 class PlayerScreen : public brls::Box
 {
   public:
-    PlayerScreen(const std::string& url, const std::string& title);
+    PlayerScreen(const std::string& url, const std::string& title, const PlaybackContext& ctx = {});
     // Alternativo: aceita AliveFlag externo (usado por download_manager)
-    PlayerScreen(const std::string& url, const std::string& title, std::shared_ptr<bool> externalAlive);
+    PlayerScreen(const std::string& url, const std::string& title, std::shared_ptr<bool> externalAlive,
+        const PlaybackContext& ctx = {});
     ~PlayerScreen();
 
   private:
@@ -25,7 +28,14 @@ class PlayerScreen : public brls::Box
     void onError(const std::string& message);
     void onEndOfFile();
     void stopPlayback();
+    // Records the current playback position into the Continue Watching
+    // entry this stream started from, if any -- called from every exit path
+    // via stopPlayback() (close, error, end of file), so wherever the user
+    // stops matters, not just a clean finish.
+    void saveProgress();
+    void openNextEpisode();
 
+    PlaybackContext ctx;
     VideoView* videoView = nullptr;
     bool stopped         = false;
 

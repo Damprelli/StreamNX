@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "api/stremio_api.hpp"
+#include "utils/hover.hpp"
 
 // A movie/series' detail page: backdrop + poster, title, rating/year,
 // description, a favorite toggle, and -- for series -- a horizontally
@@ -28,7 +29,15 @@ class DetailScreen : public brls::Box
     void buildContent(const stremio::MetaDetail& detail);
     void showSeasonEpisodes(int season);
     void refreshFavoriteButton();
-    void openStreams(const std::string& videoId, const std::string& title, const std::string& subtitle);
+    void openStreams(const std::string& videoId, const std::string& title, const std::string& subtitle,
+        const std::string& nextVideoId = "", const std::string& nextTitle = "", const std::string& nextSubtitle = "");
+
+    // Finds the episode right after (season, episode) -- same season first,
+    // otherwise the first episode of the next season key in `seasons` (a
+    // std::map, so iteration order is already ascending by season number).
+    // Returns false (outputs untouched) past the last episode DetailScreen
+    // knows about.
+    bool findNextEpisode(int season, int episode, std::string& outId, std::string& outTitle, std::string& outSubtitle);
 
     std::string id;
     std::string type;
@@ -36,7 +45,7 @@ class DetailScreen : public brls::Box
 
     brls::View* loadingGate = nullptr;
     brls::Box* episodesBox  = nullptr;
-    brls::Box* favoriteButton = nullptr;
+    HoverBox* favoriteButton = nullptr;
     brls::Label* favoriteLabel = nullptr;
 
     std::map<int, std::vector<stremio::VideoEntry>> seasons;

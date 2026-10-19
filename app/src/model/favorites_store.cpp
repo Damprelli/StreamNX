@@ -1,4 +1,5 @@
 #include "model/favorites_store.hpp"
+#include "api/cloud_sync.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -90,6 +91,7 @@ void FavoritesStore::add(const Favorite& item)
         return;
     this->items.push_back(item);
     this->save();
+    cloud::favoriteAdded(item);
 }
 
 void FavoritesStore::remove(const std::string& id)
@@ -97,5 +99,13 @@ void FavoritesStore::remove(const std::string& id)
     this->items.erase(
         std::remove_if(this->items.begin(), this->items.end(), [&](const Favorite& f) { return f.id == id; }),
         this->items.end());
+    this->save();
+    cloud::favoriteRemoved(id);
+}
+
+void FavoritesStore::replaceAll(std::vector<Favorite> newItems)
+{
+    this->loaded = true;
+    this->items  = std::move(newItems);
     this->save();
 }

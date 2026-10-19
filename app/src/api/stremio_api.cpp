@@ -185,6 +185,24 @@ void fetchStream(const std::string& addonUrl, const std::string& type, const std
                         e.title    = s.value("title", s.value("description", ""));
                         e.url      = s.value("url", "");
                         e.infoHash = s.value("infoHash", "");
+
+                        // "sources" mixes tracker announce URLs and DHT node
+                        // hints, e.g. "tracker:udp://tracker.opentrackr.org:1337/announce"
+                        // or "dht:<hash>" -- only the tracker ones are usable
+                        // as add_torrent_params.trackers entries.
+                        if (s.contains("sources") && s["sources"].is_array())
+                        {
+                            static const std::string prefix = "tracker:";
+                            for (auto& src : s["sources"])
+                            {
+                                if (!src.is_string())
+                                    continue;
+                                std::string v = src.get<std::string>();
+                                if (v.rfind(prefix, 0) == 0)
+                                    e.trackers.push_back(v.substr(prefix.size()));
+                            }
+                        }
+
                         streams.push_back(e);
                     }
                 }

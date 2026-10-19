@@ -117,6 +117,70 @@ void globalCleanup()
     curl_global_cleanup();
 }
 
+static int cancelProgress(void* userdata, curl_off_t, curl_off_t, curl_off_t, curl_off_t)
+{
+    auto* cancel = static_cast<const std::atomic<bool>*>(userdata);
+    return cancel && cancel->load() ? 1 : 0;
+}
+
+Response request(const std::string& method, const std::string& url, const std::string& jsonBody,
+    const std::string& bearerToken, const std::atomic<bool>* cancel)
+{
+    Response response;
+
+    CURL* curl = curl_easy_init();
+    if (!curl)
+    {
+        response.error = "Nao foi possivel iniciar a requisicao";
+        return response;
+    }
+
+    struct curl_slist* headers = nullptr;
+    headers                    = curl_slist_append(headers, "Content-Type: application/json");
+    headers                    = curl_slist_append(headers, "Accept: application/json");
+    std::string authHeader;
+    if (!bearerToken.empty())
+    {
+        authHeader = "Authorization: Bearer " + bearerToken;
+        headers    = curl_slist_append(headers, authHeader.c_str());
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    if (!jsonBody.empty())
+    {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonBody.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)jsonBody.size());
+    }
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 15000L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 10000L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "StreamNX/1.0");
+    // Same CA bundle as getAsync() -- see the comment there.
+    static const std::string caBundlePath = std::string(BRLS_RESOURCES) + "ca-bundle.crt";
+    curl_easy_setopt(curl, CURLOPT_CAINFO, caBundlePath.c_str());
+    if (cancel)
+    {
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancelProgress);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK)
+        response.error = curl_easy_strerror(res);
+    else
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.status);
+
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+    return response;
+}
+
 void getAsync(const std::string& url, AliveFlag alive, std::function<void(const std::string&)> onSuccess,
     std::function<void(const std::string&)> onError)
 {

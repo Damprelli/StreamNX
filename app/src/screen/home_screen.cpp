@@ -12,10 +12,12 @@
 #include "model/playback_context.hpp"
 #include "api/stremio_api.hpp"
 #include "api/cloud_sync.hpp"
+#include "view/ui_kit.hpp"
 #include "theme/streamnx_theme.hpp"
 
 #include <cctype>
 #include <cstdlib>
+#include <ctime>
 #include <functional>
 #include <vector>
 
@@ -116,6 +118,18 @@ std::function<bool(brls::View*)> makeResumeAction(const ContinueWatching& c)
 
 constexpr int FAVORITES_PER_ROW = 10;
 
+std::string greeting()
+{
+    std::time_t now = std::time(nullptr);
+    std::tm* local  = std::localtime(&now);
+    int hour        = local ? local->tm_hour : 12;
+    if (hour >= 5 && hour < 12)
+        return "Bom dia";
+    if (hour >= 12 && hour < 18)
+        return "Boa tarde";
+    return "Boa noite";
+}
+
 } // namespace
 
 void HomeScreen::addSectionHeader(brls::Box* content, const std::string& text)
@@ -126,6 +140,18 @@ void HomeScreen::addSectionHeader(brls::Box* content, const std::string& text)
     header->setMarginTop(24);
     header->setMarginBottom(12);
     content->addView(header);
+}
+
+// Only with a profile logged in -- logged out there's no name to greet.
+void HomeScreen::addWelcome(brls::Box* content)
+{
+    if (!cloud::isLoggedIn())
+        return;
+
+    content->addView(ui::label(greeting() + ", " + cloud::profileName() + "!", 30, ui::color("text")));
+    auto* sub = ui::label("Que bom te ver por aqui. Escolha algo para assistir.", 16, ui::color("text_muted"));
+    sub->setMarginTop(4);
+    content->addView(sub);
 }
 
 void HomeScreen::addContinueWatchingRow(brls::Box* content)
@@ -226,6 +252,7 @@ void HomeScreen::buildContent()
     content->setDimensions(brls::View::AUTO, brls::View::AUTO);
     content->setPadding(30, 50, 30, 50);
 
+    this->addWelcome(content);
     this->addContinueWatchingRow(content);
     this->addFavoritesGrid(content);
 

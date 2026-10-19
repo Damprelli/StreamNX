@@ -14,6 +14,7 @@ class HomeScreen : public brls::Box
     ~HomeScreen() override;
 
   private:
+    void addWelcome(brls::Box* content);
     void addSectionHeader(brls::Box* content, const std::string& text);
     void addContinueWatchingRow(brls::Box* content);
     void addFavoritesGrid(brls::Box* content);

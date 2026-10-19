@@ -17,6 +17,9 @@
 namespace updater
 {
 
+// The version this build is ("2.0.1"), as sent to /api/update.
+std::string currentVersion();
+
 // main(): argv[0] -- on the Switch, the .nro that has to be replaced.
 void setExecutablePath(const std::string& path);
 

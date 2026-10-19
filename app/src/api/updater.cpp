@@ -366,6 +366,11 @@ void installDownloaded(const Offer&, const std::string&) {}
 
 } // namespace
 
+std::string currentVersion()
+{
+    return APP_VERSION;
+}
+
 void setExecutablePath(const std::string& path)
 {
     exePath = path;

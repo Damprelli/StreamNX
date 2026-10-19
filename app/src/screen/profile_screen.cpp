@@ -1,5 +1,6 @@
 #include "screen/profile_screen.hpp"
 #include "api/cloud_sync.hpp"
+#include "api/updater.hpp"
 #include "utils/pin_input.hpp"
 #include "view/ui_kit.hpp"
 
@@ -73,6 +74,11 @@ ProfileScreen::ProfileScreen()
     this->body->setAxis(brls::Axis::COLUMN);
     this->body->setDimensions(brls::View::AUTO, brls::View::AUTO);
     this->addView(this->body);
+
+    // Outside `body`, so rebuild() (login/logout) leaves it alone.
+    auto* version = ui::label("StreamNX versao " + updater::currentVersion(), 13, ui::color("text_muted"));
+    version->setMarginTop(16);
+    this->addView(version);
 
     this->rebuild();
     this->refreshStatusLoop();

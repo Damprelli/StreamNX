@@ -3,7 +3,7 @@
 
 [Setup]
 AppName=StreamNX
-AppVersion=2.0.1.0
+AppVersion=2.0.2.0
 AppPublisher=StreamNX
 AppPublisherURL=https://github.com/Damprelli/StreamNX
 AppSupportURL=https://github.com/Damprelli/StreamNX
@@ -13,7 +13,7 @@ DefaultGroupName=StreamNX
 AllowNoIcons=yes
 LicenseFile=LICENSE
 OutputDir=build_pc
-OutputBaseFilename=StreamNX-2.0.1-Setup
+OutputBaseFilename=StreamNX-2.0.2-Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

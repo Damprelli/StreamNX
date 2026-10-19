@@ -14,6 +14,7 @@
 #include "api/http_client.hpp"
 #include "api/cloud_sync.hpp"
 #include "api/download_manager.hpp"
+#include "api/updater.hpp"
 #include "view/svg_image.hpp"
 #include "view/video_progress_slider.hpp"
 #include "theme/streamnx_theme.hpp"
@@ -218,6 +219,9 @@ int main(int argc, char* argv[])
     }
 #endif
 
+    if (argc > 0)
+        updater::setExecutablePath(argv[0]);
+
     for (int i = 1; i < argc; i++)
     {
         if (std::strcmp(argv[i], "-d") == 0)
@@ -266,6 +270,9 @@ int main(int argc, char* argv[])
 
     brls::Application::pushActivity(new brls::Activity(new MainMenu()));
 
+    // Asks StreamNX-Backend for a newer release; a dialog only if there is one.
+    updater::checkOnStartup();
+
 #ifdef STREAMNX_TV_PREVIEW
     // Switch-layout preview on PC (-DSTREAMNX_TV_UI=ON) only: replay a
     // comma-separated button script from STREAMNX_PREVIEW_KEYS (e.g.
@@ -312,6 +319,7 @@ int main(int argc, char* argv[])
     brls::Logger::info("main: mainLoop exit");
 
     download_mgr::globalCleanup();
+    updater::globalCleanup();
     // Gives changes made just before quitting (e.g. the position saved when
     // leaving the player) a moment to reach the server -- needs curl alive.
     cloud::globalCleanup();

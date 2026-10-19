@@ -48,6 +48,9 @@ Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\StreamNX"; Filenam
 
 [Run]
 Filename: "{app}\StreamNX.exe"; Description: "Launch StreamNX"; Flags: nowait postinstall skipifsilent
+; Self-update from inside the app (app/src/api/updater.cpp) runs this setup
+; with /SILENT after the app quits -- reopen it once the files are in place.
+Filename: "{app}\StreamNX.exe"; WorkingDir: "{app}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallDelete]
 Type: dirifempty; Name: "{app}"

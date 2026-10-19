@@ -282,6 +282,9 @@ endif ()
 
 target_include_directories(${PROJECT_NAME} PRIVATE app ${APP_PLATFORM_INCLUDE})
 target_compile_options(${PROJECT_NAME} PRIVATE -ffunction-sections -fdata-sections ${APP_PLATFORM_OPTION})
+# What the updater sends to /api/update -- has to match the release tag
+# (v2.0.0 / v2.0.0_PC) for "is there something newer" to be right.
+target_compile_definitions(${PROJECT_NAME} PRIVATE APP_VERSION="${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_ALTER}")
 if (PLATFORM_SWITCH)
     # borealis pulls in deko3d transitively; CMake's link-line generator
     # places a target's transitive deps immediately after the target itself.

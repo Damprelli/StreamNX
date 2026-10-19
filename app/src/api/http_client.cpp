@@ -181,6 +181,77 @@ Response request(const std::string& method, const std::string& url, const std::s
     return response;
 }
 
+namespace
+{
+
+struct DownloadProgress
+{
+    const std::atomic<bool>* cancel;
+    std::atomic<long long>* received;
+    std::atomic<long long>* total;
+};
+
+int downloadProgress(void* userdata, curl_off_t dltotal, curl_off_t dlnow, curl_off_t, curl_off_t)
+{
+    auto* p = static_cast<DownloadProgress*>(userdata);
+    if (p->received)
+        p->received->store((long long)dlnow);
+    if (p->total && dltotal > 0)
+        p->total->store((long long)dltotal);
+    return p->cancel && p->cancel->load() ? 1 : 0;
+}
+
+size_t fileWriteCallback(char* ptr, size_t size, size_t nmemb, void* userdata)
+{
+    return fwrite(ptr, size, nmemb, static_cast<FILE*>(userdata)) * size;
+}
+
+} // namespace
+
+std::string downloadToFile(const std::string& url, const std::string& path, const std::atomic<bool>* cancel,
+    std::atomic<long long>* received, std::atomic<long long>* total)
+{
+    FILE* file = fopen(path.c_str(), "wb");
+    if (!file)
+        return "Nao foi possivel criar " + path;
+
+    CURL* curl = curl_easy_init();
+    if (!curl)
+    {
+        fclose(file);
+        return "Nao foi possivel iniciar a requisicao";
+    }
+
+    DownloadProgress progress { cancel, received, total };
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fileWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 15000L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "StreamNX/1.0");
+    static const std::string caBundlePath = std::string(BRLS_RESOURCES) + "ca-bundle.crt";
+    curl_easy_setopt(curl, CURLOPT_CAINFO, caBundlePath.c_str());
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, downloadProgress);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &progress);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+    bool flushed = fclose(file) == 0;
+
+    if (res == CURLE_ABORTED_BY_CALLBACK)
+        return "Cancelado";
+    if (res != CURLE_OK)
+        return curl_easy_strerror(res);
+    if (!flushed)
+        return "Falha ao gravar " + path;
+    return "";
+}
+
 void getAsync(const std::string& url, AliveFlag alive, std::function<void(const std::string&)> onSuccess,
     std::function<void(const std::string&)> onError)
 {

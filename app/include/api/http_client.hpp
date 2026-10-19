@@ -39,6 +39,15 @@ struct Response
 Response request(const std::string& method, const std::string& url, const std::string& jsonBody = "",
     const std::string& bearerToken = "", const std::atomic<bool>* cancel = nullptr);
 
+// Blocking: saves `url` to `path` (following redirects -- GitHub release
+// files redirect to their CDN). No overall timeout, since a big file on the
+// Switch's Wi-Fi takes a while; it only gives up when the transfer stalls.
+// `received`/`total` (bytes; total 0 while unknown) can be read from another
+// thread to show progress. Returns "" on success or the error; on failure
+// or cancel, whatever was written to `path` is left for the caller to remove.
+std::string downloadToFile(const std::string& url, const std::string& path, const std::atomic<bool>* cancel,
+    std::atomic<long long>* received, std::atomic<long long>* total);
+
 // Must be called once before any getAsync() call (main() does this) and
 // cleaned up once at shutdown.
 void globalInit();

@@ -68,7 +68,7 @@ std::string pinWorkingDirectory()
 
     if (!previous.empty() && fs::path(previous) != fs::path(kDataDir))
     {
-        for (const char* name : { "addons.json", "catalogs.json", "favorites.json", "continue_watching.json" })
+        for (const char* name : { "addons.json", "catalog_addons.json", "subtitle_addons.json", "favorites.json", "continue_watching.json" })
         {
             fs::path from = previous / name;
             if (!fs::exists(name, ec) && fs::exists(from, ec))

@@ -101,7 +101,7 @@ void AddonStore::save()
     }
 }
 
-std::string AddonStore::add(const std::string& rawUrl)
+std::string AddonStore::normalizeUrl(const std::string& rawUrl, std::string& outUrl)
 {
     std::string url = trim(rawUrl);
 
@@ -127,6 +127,17 @@ std::string AddonStore::add(const std::string& rawUrl)
 
     if (url.empty())
         return "URL de addon invalida.";
+
+    outUrl = url;
+    return "";
+}
+
+std::string AddonStore::add(const std::string& rawUrl)
+{
+    std::string url;
+    std::string error = normalizeUrl(rawUrl, url);
+    if (!error.empty())
+        return error;
 
     if (isCinemeta(url))
         return "Cinemeta ja esta sempre ativo, nao precisa adicionar.";

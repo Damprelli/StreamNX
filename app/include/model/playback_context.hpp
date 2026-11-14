@@ -17,6 +17,12 @@ struct PlaybackContext
     std::string posterUrl;
     std::string subtitle; // e.g. "Temporada 1 - Episodio 2", recorded into Continue Watching
 
+    // The id subtitles addons are asked about -- the movie's own id, or the
+    // episode's video id ("tt1234567:1:2") for series. Empty means "don't
+    // look for addon subtitles" (e.g. a local download with nothing to tie
+    // it back to a title).
+    std::string videoId;
+
     double resumePositionSeconds = 0.0;
 
     // Empty nextVideoId means there's no next episode to offer (a movie, or

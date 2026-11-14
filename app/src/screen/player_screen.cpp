@@ -5,10 +5,34 @@
 #include "view/video_view.hpp"
 #include "api/mpv_player.hpp"
 #include "model/continue_watching_store.hpp"
+#include "model/subtitle_addon_store.hpp"
+
+#include <algorithm>
 
 #if !defined(BOREALIS_USE_DEKO3D)
 #include <borealis/platforms/glfw/glfw_video.hpp>
 #endif
+
+namespace
+{
+
+// Per addon -- OpenSubtitles alone can return dozens for one language,
+// far more than anyone wants to cycle through in PlayerSettingsScreen.
+constexpr size_t MAX_SUBTITLES_PER_ADDON = 10;
+
+std::string hostLabel(const std::string& url)
+{
+    std::string s   = url;
+    size_t schemeAt = s.find("://");
+    if (schemeAt != std::string::npos)
+        s = s.substr(schemeAt + 3);
+    size_t slashAt = s.find('/');
+    if (slashAt != std::string::npos)
+        s = s.substr(0, slashAt);
+    return s.empty() ? url : s;
+}
+
+} // namespace
 
 PlayerScreen::PlayerScreen(const std::string& url, const std::string& title, const PlaybackContext& ctx)
     : PlayerScreen(url, title, std::make_shared<bool>(true), ctx)
@@ -68,6 +92,7 @@ PlayerScreen::PlayerScreen(
         });
 
     MpvPlayer::instance().loadUrl(url);
+    this->fetchAddonSubtitles();
 
     brls::Application::giveFocus(this);
 
@@ -141,8 +166,89 @@ void PlayerScreen::openNextEpisode()
     });
 }
 
+void PlayerScreen::fetchAddonSubtitles()
+{
+    if (this->ctx.videoId.empty() || this->ctx.type.empty())
+        return;
+
+    auto& store = SubtitleAddonStore::instance();
+    store.load();
+
+    for (auto& addon : store.all())
+    {
+        if (!addon.enabled)
+            continue;
+
+        std::string addonName = hostLabel(addon.url);
+        stremio::fetchSubtitles(
+            addon.url, this->ctx.type, this->ctx.videoId, this->alive,
+            [this, addonName](std::vector<stremio::SubtitleEntry> subtitles) {
+                auto& store = SubtitleAddonStore::instance();
+
+                // Preferred language only (best alias first), the addon's
+                // own order kept within the same rank.
+                std::vector<std::pair<int, stremio::SubtitleEntry>> ranked;
+                for (auto& s : subtitles)
+                {
+                    int rank = store.languageRank(s.lang, s.langCode);
+                    if (rank >= 0)
+                        ranked.push_back({ rank, s });
+                }
+                std::stable_sort(ranked.begin(), ranked.end(),
+                    [](const auto& a, const auto& b) { return a.first < b.first; });
+                if (ranked.size() > MAX_SUBTITLES_PER_ADDON)
+                    ranked.resize(MAX_SUBTITLES_PER_ADDON);
+
+                for (auto& r : ranked)
+                {
+                    r.second.addonName = addonName;
+                    this->pendingSubtitles.push_back(r.second);
+                }
+
+                brls::Logger::info("player: {} subtitle(s) from {}", ranked.size(), addonName);
+                if (this->fileLoaded)
+                    this->flushAddonSubtitles();
+            },
+            [addonName](std::string error) {
+                brls::Logger::warning("player: subtitles from {} failed: {}", addonName, error);
+            });
+    }
+}
+
+void PlayerScreen::flushAddonSubtitles()
+{
+    if (this->pendingSubtitles.empty() || this->stopped)
+        return;
+
+    auto& mpv = MpvPlayer::instance();
+
+    // Like Stremio: the best preferred-language match gets turned on --
+    // unless the file already picked one of its own (embedded default/
+    // forced track) or the preference is "any language", where there's no
+    // "best" to pick.
+    bool canSelect = !this->subtitleAutoSelected && mpv.getCurrentTrack("sub") <= 0
+        && SubtitleAddonStore::instance().language().code != "all";
+
+    int n = 1;
+    for (auto& s : this->pendingSubtitles)
+    {
+        std::string lang  = !s.langCode.empty() ? s.langCode : (s.lang.empty() ? "?" : s.lang);
+        std::string title = lang + " #" + std::to_string(n++) + " - " + s.addonName;
+        mpv.addSubtitle(s.url, title, lang, canSelect);
+        if (canSelect)
+        {
+            canSelect                  = false;
+            this->subtitleAutoSelected = true;
+        }
+    }
+    this->pendingSubtitles.clear();
+}
+
 void PlayerScreen::onLoaded()
 {
+    this->fileLoaded = true;
+    this->flushAddonSubtitles();
+
     if (this->ctx.resumePositionSeconds > 0.0)
         MpvPlayer::instance().seekAbsolute(this->ctx.resumePositionSeconds);
     // VideoView's own OSD polls MpvPlayer::getDuration() every frame to

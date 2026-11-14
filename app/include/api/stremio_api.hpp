@@ -27,11 +27,25 @@ struct CatalogRef
     std::string type;
     std::string id;
     std::string name;
+    // From the catalog's "extra" (or legacy "extraSupported"/
+    // "extraRequired"): whether it answers "search=...", and whether it
+    // only answers with an extra there's no way to fill in -- e.g. a
+    // search-only catalog, which has nothing to list when browsing.
+    bool searchable    = false;
+    bool requiresExtra = false;
+    // A required extra that does list its options (Cinemeta's "New" needs
+    // a year) is filled with the first one -- e.g. "genre=2026" -- to pass
+    // as fetchCatalog's `extra` when browsing.
+    std::string defaultExtra;
 };
 
 struct ManifestInfo
 {
     std::string name;
+    // behaviorHints.configurationRequired: the bare URL doesn't work --
+    // the user has to set the addon up on its /configure page and add the
+    // URL that page gives back instead.
+    bool configurationRequired = false;
     std::vector<CatalogRef> catalogs;
 };
 
@@ -84,6 +98,16 @@ struct StreamEntry
     std::string addonName;   // filled by the caller, not present in the JSON
 };
 
+// One entry from a subtitles addon's /subtitles/{type}/{id}.json.
+struct SubtitleEntry
+{
+    std::string id;
+    std::string url;  // the subtitle file itself (srt/vtt/ass...), loaded straight into mpv
+    std::string lang; // as the addon reports it -- "pob", "eng", "Portuguese (BR)"... (see SubtitleAddonStore)
+    std::string langCode; // some addons send a code here alongside a full name in `lang` ("pt-br")
+    std::string addonName; // filled by the caller, not present in the JSON
+};
+
 void fetchManifest(const std::string& addonUrl, AliveFlag alive, std::function<void(ManifestInfo)> onSuccess,
     std::function<void(std::string)> onError);
 
@@ -94,12 +118,6 @@ void fetchCatalog(const std::string& addonUrl, const std::string& type, const st
     AliveFlag alive, std::function<void(std::vector<MetaSummary>)> onSuccess,
     std::function<void(std::string)> onError, const std::string& extra = "");
 
-// Same response shape as fetchCatalog, but `url` is already the complete
-// catalog endpoint -- for CatalogStore's entries, which aren't relative to
-// any one addon's base URL.
-void fetchCatalogUrl(const std::string& url, AliveFlag alive, std::function<void(std::vector<MetaSummary>)> onSuccess,
-    std::function<void(std::string)> onError);
-
 void fetchMeta(const std::string& addonUrl, const std::string& type, const std::string& id, AliveFlag alive,
     std::function<void(MetaDetail)> onSuccess, std::function<void(std::string)> onError);
 
@@ -108,5 +126,10 @@ void fetchMeta(const std::string& addonUrl, const std::string& type, const std::
 // own id.
 void fetchStream(const std::string& addonUrl, const std::string& type, const std::string& id, AliveFlag alive,
     std::function<void(std::vector<StreamEntry>)> onSuccess, std::function<void(std::string)> onError);
+
+// GET {addonUrl}/subtitles/{type}/{id}.json -- same `id` rules as
+// fetchStream (the episode's video id for series).
+void fetchSubtitles(const std::string& addonUrl, const std::string& type, const std::string& id, AliveFlag alive,
+    std::function<void(std::vector<SubtitleEntry>)> onSuccess, std::function<void(std::string)> onError);
 
 } // namespace stremio

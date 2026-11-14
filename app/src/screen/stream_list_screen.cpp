@@ -604,6 +604,7 @@ void StreamListScreen::playUrl(const std::string& url)
     ctx.type               = this->type;
     ctx.posterUrl          = this->posterUrl;
     ctx.subtitle           = this->subtitle;
+    ctx.videoId            = this->videoId;
     ctx.nextVideoId        = this->nextVideoId;
     ctx.nextTitle          = this->nextTitle;
     ctx.nextSubtitle       = this->nextSubtitle;

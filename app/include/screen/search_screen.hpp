@@ -7,13 +7,13 @@
 
 #include "model/media_item.hpp"
 
-// "Buscar Filmes/Series": with no query typed, shows every enabled addon's
-// (and CatalogStore's) catalogs merged together, 100 at a time. Press X to
-// type a query -- that fires a real search request (the protocol's
-// catalog/{type}/top/search={query}.json) against every enabled addon,
-// same as StreamNX-main, rather than just filtering titles already fetched
-// for browsing (which almost never includes an arbitrary title someone
-// actually searches for).
+// "Buscar Filmes/Series": with no query typed, shows every movie/series
+// catalog Cinemeta and the enabled addons declare, merged together, 100 at
+// a time. Press X to type a query -- that fires a real search request
+// (catalog/{type}/{id}/search={query}.json) against Cinemeta and every
+// catalog addon catalog that supports it, rather than just filtering titles
+// already fetched for browsing (which almost never includes an arbitrary
+// title someone actually searches for).
 class SearchScreen : public brls::Box
 {
   public:
@@ -37,7 +37,6 @@ class SearchScreen : public brls::Box
     std::string query;
     std::vector<MediaItem> allItems;    // browse mode (query empty)
     std::vector<MediaItem> searchResults; // search mode (query non-empty)
-    bool hasEnabledAddons = false;
     size_t visibleCount   = 0;
 
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);

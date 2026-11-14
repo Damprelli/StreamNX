@@ -4,6 +4,7 @@
 #include "view/shelf.hpp"
 #include "api/image_cache.hpp"
 #include "model/addon_store.hpp"
+#include "model/catalog_addon_store.hpp"
 #include "model/favorite.hpp"
 #include "model/favorites_store.hpp"
 #include "utils/mouse.hpp"
@@ -155,6 +156,7 @@ DetailScreen::DetailScreen(const std::string& id, const std::string& type, const
 #endif
 
     AddonStore::instance().load();
+    CatalogAddonStore::instance().load();
 }
 
 DetailScreen::~DetailScreen()
@@ -167,7 +169,12 @@ void DetailScreen::tryAddonsForMeta(size_t addonIndex)
     // Cinemeta is a fixed dependency (see stremio::CINEMETA_URL), not one of
     // AddonStore's user-managed entries -- always tried first, same as
     // StreamNX-main, regardless of what the user has added/enabled.
+    // Catalog addons next (they're what lists non-IMDb ids like "kitsu:"
+    // in the first place), then stream addons.
     std::vector<std::string> urls { stremio::CINEMETA_URL };
+    for (auto& addon : CatalogAddonStore::instance().all())
+        if (addon.enabled)
+            urls.push_back(addon.url);
     for (auto& addon : AddonStore::instance().all())
         if (addon.enabled)
             urls.push_back(addon.url);

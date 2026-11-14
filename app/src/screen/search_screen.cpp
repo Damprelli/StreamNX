@@ -2,7 +2,7 @@
 #include "view/media_grid.hpp"
 #include "view/loading_gate.hpp"
 #include "model/addon_store.hpp"
-#include "model/catalog_store.hpp"
+#include "model/catalog_addon_store.hpp"
 #include "model/favorites_store.hpp"
 #include "api/stremio_api.hpp"
 #include "utils/mouse.hpp"
@@ -174,31 +174,22 @@ void SearchScreen::buildContent()
 void SearchScreen::loadCatalog()
 {
     AddonStore::instance().load();
-    CatalogStore::instance().load();
+    CatalogAddonStore::instance().load();
 
-    std::vector<std::string> enabledUrls;
+    // Everything there is to browse, straight from the manifests: Cinemeta
+    // (always on, see stremio::CINEMETA_URL), then catalog addons, then any
+    // stream addon that happens to declare catalogs of its own.
+    std::vector<std::string> urls { stremio::CINEMETA_URL };
+    for (auto& addon : CatalogAddonStore::instance().all())
+        if (addon.enabled)
+            urls.push_back(addon.url);
     for (auto& addon : AddonStore::instance().all())
         if (addon.enabled)
-            enabledUrls.push_back(addon.url);
-
-    std::vector<std::string> enabledCatalogUrls;
-    for (auto& catalog : CatalogStore::instance().all())
-        if (catalog.enabled)
-            enabledCatalogUrls.push_back(catalog.url);
-
-    this->hasEnabledAddons = !enabledUrls.empty() || !enabledCatalogUrls.empty();
-
-    if (enabledUrls.empty() && enabledCatalogUrls.empty())
-    {
-        this->allItems.clear();
-        this->rebuildResults();
-        return;
-    }
+            urls.push_back(addon.url);
 
     // "pending" starts at 1 (dropped last, right after the loop) and gains
-    // one more for every manifest fetch, one more again for every
-    // movie/series catalog a manifest turns out to list, and one for each
-    // catalog fetched directly from CatalogStore below -- that total only
+    // one more for every manifest fetch and one more again for every
+    // movie/series catalog a manifest turns out to list -- that total only
     // stabilizes once every request has answered, so the extra starting
     // reservation is what stops the first one from racing the count down
     // to zero before the rest get a chance to add theirs.
@@ -215,25 +206,27 @@ void SearchScreen::loadCatalog()
         this->rebuildResults();
     };
 
-    // A manifest-declared "top" and one of CatalogStore's entries often
-    // resolve to the exact same URL for Cinemeta -- de-duping by id (shared
-    // across both sources) keeps that from showing every popular title
-    // twice.
+    // The same title shows up in several catalogs (Popular and Featured,
+    // Cinemeta and a catalog addon...) -- de-duped by id across all of them.
     auto addUnique = [results, seenIds](const std::vector<stremio::MetaSummary>& metas) {
         for (auto& m : metas)
             if (seenIds->insert(m.id).second)
                 results->push_back(toMediaItem(m));
     };
 
-    for (auto& url : enabledUrls)
+    for (auto& url : urls)
     {
         (*pending)++;
         stremio::fetchManifest(
             url, alive,
             [url, alive, pending, addUnique, onOneCatalogDone](stremio::ManifestInfo info) {
+                // A catalog that needs an extra there's no option list for
+                // (search-only, usually) has nothing to list without one;
+                // one whose required extra lists options (Cinemeta's "New"
+                // needs a year) is asked for its first option.
                 std::vector<stremio::CatalogRef> picks;
                 for (auto& c : info.catalogs)
-                    if (c.type == "movie" || c.type == "series")
+                    if ((c.type == "movie" || c.type == "series") && !c.requiresExtra)
                         picks.push_back(c);
 
                 for (auto& pick : picks)
@@ -247,21 +240,9 @@ void SearchScreen::loadCatalog()
                             addUnique(metas);
                             onOneCatalogDone();
                         },
-                        [onOneCatalogDone](std::string) { onOneCatalogDone(); });
+                        [onOneCatalogDone](std::string) { onOneCatalogDone(); }, pick.defaultExtra);
                 }
 
-                onOneCatalogDone();
-            },
-            [onOneCatalogDone](std::string) { onOneCatalogDone(); });
-    }
-
-    for (auto& catalogUrl : enabledCatalogUrls)
-    {
-        (*pending)++;
-        stremio::fetchCatalogUrl(
-            catalogUrl, alive,
-            [addUnique, onOneCatalogDone](std::vector<stremio::MetaSummary> metas) {
-                addUnique(metas);
                 onOneCatalogDone();
             },
             [onOneCatalogDone](std::string) { onOneCatalogDone(); });
@@ -299,15 +280,7 @@ void SearchScreen::openSearchDialog()
 
 void SearchScreen::performSearch(const std::string& searchQuery)
 {
-    AddonStore::instance().load();
-
-    // Cinemeta is a fixed dependency (see stremio::CINEMETA_URL), not one of
-    // AddonStore's user-managed entries -- always searched, same as
-    // StreamNX-main, regardless of what the user has added/enabled.
-    std::vector<std::string> enabledUrls { stremio::CINEMETA_URL };
-    for (auto& addon : AddonStore::instance().all())
-        if (addon.enabled)
-            enabledUrls.push_back(addon.url);
+    CatalogAddonStore::instance().load();
 
     this->resultsHeader->setText("Buscando \"" + searchQuery + "\"...");
 
@@ -338,19 +311,50 @@ void SearchScreen::performSearch(const std::string& searchQuery)
         this->rebuildResults();
     };
 
-    for (auto& url : enabledUrls)
+    // Cinemeta (a fixed dependency, see stremio::CINEMETA_URL) is searched
+    // through its "top" catalogs; catalog addons through whichever catalogs
+    // their manifests say take "search" (below). Stream addons aren't
+    // searched at all -- they have no catalogs, so asking them only ever
+    // failed.
+    for (const char* type : { "movie", "series" })
     {
-        for (const char* type : { "movie", "series" })
-        {
-            (*pending)++;
-            stremio::fetchCatalog(
-                url, type, "top", alive,
-                [addUnique, onOneDone](std::vector<stremio::MetaSummary> metas) {
-                    addUnique(metas);
-                    onOneDone();
-                },
-                [onOneDone](std::string) { onOneDone(); }, extra);
-        }
+        (*pending)++;
+        stremio::fetchCatalog(
+            stremio::CINEMETA_URL, type, "top", alive,
+            [addUnique, onOneDone](std::vector<stremio::MetaSummary> metas) {
+                addUnique(metas);
+                onOneDone();
+            },
+            [onOneDone](std::string) { onOneDone(); }, extra);
+    }
+
+    for (auto& addon : CatalogAddonStore::instance().all())
+    {
+        if (!addon.enabled)
+            continue;
+
+        std::string url = addon.url;
+        (*pending)++;
+        stremio::fetchManifest(
+            url, alive,
+            [url, alive, pending, extra, addUnique, onOneDone](stremio::ManifestInfo info) {
+                for (auto& c : info.catalogs)
+                {
+                    if (!c.searchable || (c.type != "movie" && c.type != "series"))
+                        continue;
+
+                    (*pending)++;
+                    stremio::fetchCatalog(
+                        url, c.type, c.id, alive,
+                        [addUnique, onOneDone](std::vector<stremio::MetaSummary> metas) {
+                            addUnique(metas);
+                            onOneDone();
+                        },
+                        [onOneDone](std::string) { onOneDone(); }, extra);
+                }
+                onOneDone();
+            },
+            [onOneDone](std::string) { onOneDone(); });
     }
 
     onOneDone();
@@ -366,8 +370,6 @@ void SearchScreen::rebuildResults(bool resetPaging)
 
     if (!source.empty())
         this->resultsHeader->setText(isSearch ? ("Resultados para \"" + query + "\"") : "Todos os titulos");
-    else if (!this->hasEnabledAddons)
-        this->resultsHeader->setText("Nenhum addon ou catalogo ativo -- ative um na tela Addons.");
     else if (isSearch)
         this->resultsHeader->setText("Nenhum resultado para \"" + query + "\"");
     else

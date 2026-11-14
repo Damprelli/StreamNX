@@ -416,6 +416,14 @@ void MpvPlayer::setTrack(const std::string& type, int64_t id)
     mpv_command_async(this->mpv, 0, cmd);
 }
 
+void MpvPlayer::addSubtitle(const std::string& url, const std::string& title, const std::string& lang, bool select)
+{
+    if (!this->mpv)
+        return;
+    const char* cmd[] = { "sub-add", url.c_str(), select ? "select" : "auto", title.c_str(), lang.c_str(), nullptr };
+    mpv_command_async(this->mpv, 0, cmd);
+}
+
 double MpvPlayer::getSpeed()
 {
     if (!this->mpv)

@@ -29,6 +29,12 @@ class AddonStore
     // and saves it -- without echoing it back to the server.
     void replaceAll(std::vector<Addon> newItems);
 
+    // The URL cleanup add() does (trim, scheme, stremio://, strip
+    // "manifest.json" and trailing slashes) -- shared with
+    // SubtitleAddonStore. Returns "" and fills outUrl on success, otherwise
+    // a user-facing error message.
+    static std::string normalizeUrl(const std::string& rawUrl, std::string& outUrl);
+
   private:
     void save();
 

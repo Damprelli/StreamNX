@@ -1,6 +1,7 @@
 #include "screen/addons_screen.hpp"
 #include "model/addon_store.hpp"
-#include "model/catalog_store.hpp"
+#include "model/catalog_addon_store.hpp"
+#include "model/subtitle_addon_store.hpp"
 #include "view/loading_gate.hpp"
 #include "api/stremio_api.hpp"
 #include "utils/mouse.hpp"
@@ -108,7 +109,16 @@ class AddonRow : public HoverBox
 
         stremio::fetchManifest(
             url, this->rowAlive,
-            [netStatus](stremio::ManifestInfo) {
+            [netStatus](stremio::ManifestInfo info) {
+                // Answers, but won't work as added: this URL is the
+                // unconfigured one (see ManifestInfo::configurationRequired).
+                if (info.configurationRequired)
+                {
+                    netStatus->setText("Precisa configurar -- abra a pagina de configuracao do addon e cole a URL "
+                                       "que ela gerar");
+                    netStatus->setTextColor(nvgRGB(220, 170, 80));
+                    return;
+                }
                 netStatus->setText("Online");
                 netStatus->setTextColor(nvgRGB(110, 220, 130));
             },
@@ -140,43 +150,6 @@ class AddonRow : public HoverBox
     }
 };
 
-// One extra catalog from CatalogStore (Cinemeta's genre/year/rating
-// variants -- see catalog_store.cpp). Simpler than AddonRow: no manifest to
-// probe, no removing -- just on/off, since it's a fixed, known set rather
-// than something the user pastes in.
-class CatalogRow : public HoverBox
-{
-  public:
-    CatalogRow(const std::string& title, bool enabled, std::function<void()> onToggle)
-    {
-        this->setAxis(brls::Axis::ROW);
-        this->setFocusable(true);
-        this->setJustifyContent(brls::JustifyContent::SPACE_BETWEEN);
-        this->setDimensions(brls::View::AUTO, brls::View::AUTO);
-        this->setPadding(14, 20, 14, 20);
-        this->setMarginBottom(10);
-        this->setCornerRadius(8);
-        this->setHoverColors(ui::color("surface"), ui::color("surface_raised"));
-
-        auto* titleLabel = new brls::Label();
-        titleLabel->setText(title);
-        titleLabel->setFontSize(17);
-        this->addView(titleLabel);
-
-        auto* status = new brls::Label();
-        status->setText(enabled ? "Ativo" : "Desativado");
-        status->setFontSize(14);
-        status->setTextColor(enabled ? nvgRGB(110, 220, 130) : nvgRGB(150, 150, 150));
-        this->addView(status);
-
-        this->registerAction("Ativar/Desativar", brls::BUTTON_A, [onToggle](brls::View*) {
-            onToggle();
-            return true;
-        });
-        makeClickable(this);
-    }
-};
-
 } // namespace
 
 AddonsScreen::AddonsScreen()
@@ -195,7 +168,7 @@ AddonsScreen::AddonsScreen()
 
 #ifndef STREAMNX_PC_UI
     auto* hint = new brls::Label();
-    hint->setText("Pressione X para adicionar um addon pela URL do manifesto.");
+    hint->setText("Pressione X para adicionar um addon pela URL do manifesto. ZL/ZR trocam de aba.");
     hint->setFontSize(15);
     hint->setTextColor(nvgRGB(150, 150, 150));
     hint->setMarginBottom(20);
@@ -210,18 +183,24 @@ AddonsScreen::AddonsScreen()
     this->addView(this->loadingGate);
 }
 
-void AddonsScreen::buildContent()
+namespace
 {
-    this->removeView(this->loadingGate);
-    this->loadingGate = nullptr;
+
+// One tab's body: an optional (PC) "add" button above a scrolling column.
+// Returns the column to fill.
+brls::Box* makeTabBody(brls::Box* tab, const std::string& addLabel, std::function<void()> onAdd)
+{
+    tab->setAxis(brls::Axis::COLUMN);
+    tab->setGrow(1.0f);
 
 #ifdef STREAMNX_PC_UI
-    auto* addButton = ui::button("Adicionar Addon", ui::ButtonStyle::Primary, [this]() { this->openAddDialog(); },
-        ui::icons::add);
+    auto* addButton = ui::button(addLabel, ui::ButtonStyle::Primary, onAdd, ui::icons::add);
     addButton->setAlignSelf(brls::AlignSelf::FLEX_START);
     addButton->setMarginBottom(20);
-
-    this->addView(addButton);
+    tab->addView(addButton);
+#else
+    (void)addLabel;
+    (void)onAdd;
 #endif
 
     auto* scroll = new brls::ScrollingFrame();
@@ -233,47 +212,202 @@ void AddonsScreen::buildContent()
     content->setAxis(brls::Axis::COLUMN);
     content->setDimensions(brls::View::AUTO, brls::View::AUTO);
 
-    this->listBox = new brls::Box();
-    this->listBox->setAxis(brls::Axis::COLUMN);
-    this->listBox->setDimensions(brls::View::AUTO, brls::View::AUTO);
-    content->addView(this->listBox);
-
-    auto* catalogsHeader = new brls::Label();
-    catalogsHeader->setText("Catalogos");
-    catalogsHeader->setFontSize(20);
-    catalogsHeader->setMarginTop(28);
-    catalogsHeader->setMarginBottom(4);
-    content->addView(catalogsHeader);
-
-    auto* catalogsHint = new brls::Label();
-    catalogsHint->setText("Slices extras do Cinemeta (genero/ano/nota) que aparecem em Buscar. O catalogo principal do Cinemeta e sempre ativo e nao aparece aqui.");
-    catalogsHint->setFontSize(13);
-    catalogsHint->setTextColor(nvgRGB(150, 150, 150));
-    catalogsHint->setIsWrapping(true);
-    catalogsHint->setMarginBottom(14);
-    content->addView(catalogsHint);
-
-    this->catalogListBox = new brls::Box();
-    this->catalogListBox->setAxis(brls::Axis::COLUMN);
-    this->catalogListBox->setDimensions(brls::View::AUTO, brls::View::AUTO);
-    content->addView(this->catalogListBox);
-
     scroll->setContentView(content);
-    this->addView(scroll);
+    tab->addView(scroll);
+    return content;
+}
+
+brls::Box* makeListBox()
+{
+    auto* box = new brls::Box();
+    box->setAxis(brls::Axis::COLUMN);
+    box->setDimensions(brls::View::AUTO, brls::View::AUTO);
+    return box;
+}
+
+brls::Label* makeSectionHint(const std::string& text)
+{
+    auto* hint = new brls::Label();
+    hint->setText(text);
+    hint->setFontSize(13);
+    hint->setTextColor(nvgRGB(150, 150, 150));
+    hint->setIsWrapping(true);
+    hint->setMarginBottom(14);
+    return hint;
+}
+
+} // namespace
+
+void AddonsScreen::buildContent()
+{
+    this->removeView(this->loadingGate);
+    this->loadingGate = nullptr;
+
+    // Tab bar -- the active tab gets the accent color (see showTab()).
+    auto* tabBar = new brls::Box();
+    tabBar->setAxis(brls::Axis::ROW);
+    tabBar->setMarginBottom(18);
+
+    const struct
+    {
+        const char* label;
+        const char* icon;
+    } tabInfo[TAB_COUNT] = {
+        { "Streams", ui::icons::play },
+        { "Catalogos", ui::icons::extension },
+        { "Legendas", ui::icons::movie },
+    };
+    for (int t = 0; t < TAB_COUNT; t++)
+    {
+        this->tabButtons[t] = ui::button(
+            tabInfo[t].label, ui::ButtonStyle::Secondary, [this, t]() { this->showTab(t); }, tabInfo[t].icon);
+        if (t + 1 < TAB_COUNT)
+            this->tabButtons[t]->setMarginRight(10);
+        tabBar->addView(this->tabButtons[t]);
+    }
+    this->addView(tabBar);
+
+    auto onAdd = [this]() { this->openAddDialog(); };
+
+    // --- Streams: the stream addons this screen always listed.
+    this->tabs[TAB_STREAMS] = new brls::Box();
+    auto* streamsContent    = makeTabBody(this->tabs[TAB_STREAMS], "Adicionar Addon", onAdd);
+
+    this->listBox = makeListBox();
+    streamsContent->addView(this->listBox);
+
+    // --- Catalogos: catalog addons, on top of the always-on Cinemeta.
+    this->tabs[TAB_CATALOGS] = new brls::Box();
+    auto* catalogsContent    = makeTabBody(this->tabs[TAB_CATALOGS], "Adicionar Addon de Catalogo", onAdd);
+
+    catalogsContent->addView(makeSectionHint(
+        "Addons de catalogo (ex: Kitsu, TMDB, MDBList) somam seus catalogos de filmes e series aos do Cinemeta em "
+        "Buscar, entram na busca por nome e fornecem os detalhes dos titulos que listam."));
+
+    this->catalogAddonListBox = makeListBox();
+    catalogsContent->addView(this->catalogAddonListBox);
+
+    // --- Legendas: subtitles addons + the preferred language.
+    this->tabs[TAB_SUBTITLES] = new brls::Box();
+    auto* subtitlesContent    = makeTabBody(this->tabs[TAB_SUBTITLES], "Adicionar Addon de Legendas", onAdd);
+
+    subtitlesContent->addView(makeSectionHint(
+        "Addons de legenda (ex: OpenSubtitles) buscam legendas externas para o que voce assiste. No player, elas "
+        "aparecem em Opcoes de reproducao > Legenda, e a melhor no idioma preferido ja comeca ativa."));
+
+    // A cycles through the languages.
+    auto* languageRow = new HoverBox();
+    languageRow->setAxis(brls::Axis::ROW);
+    languageRow->setFocusable(true);
+    languageRow->setJustifyContent(brls::JustifyContent::SPACE_BETWEEN);
+    languageRow->setDimensions(brls::View::AUTO, brls::View::AUTO);
+    languageRow->setPadding(14, 20, 14, 20);
+    languageRow->setMarginBottom(24);
+    languageRow->setCornerRadius(8);
+    languageRow->setHoverColors(ui::color("surface"), ui::color("surface_raised"));
+
+    auto* languageTitle = new brls::Label();
+    languageTitle->setText("Idioma preferido");
+    languageTitle->setFontSize(17);
+    languageRow->addView(languageTitle);
+
+    this->languageValue = new brls::Label();
+    this->languageValue->setFontSize(15);
+    this->languageValue->setTextColor(ui::color("accent"));
+    languageRow->addView(this->languageValue);
+
+    languageRow->registerAction("Trocar idioma", brls::BUTTON_A, [this](brls::View*) {
+        SubtitleAddonStore::instance().cycleLanguage();
+        this->languageValue->setText(SubtitleAddonStore::instance().language().label);
+        return true;
+    });
+    makeClickable(languageRow);
+    subtitlesContent->addView(languageRow);
+
+    this->subtitleListBox = makeListBox();
+    subtitlesContent->addView(this->subtitleListBox);
+
+    for (auto* tab : this->tabs)
+        this->addView(tab);
 
     this->registerAction("Adicionar Addon", brls::BUTTON_X, [this](brls::View*) {
         this->openAddDialog();
         return true;
     });
+    this->registerAction("Aba anterior", brls::BUTTON_LT, [this](brls::View*) {
+        this->showTab((this->currentTab + TAB_COUNT - 1) % TAB_COUNT);
+        return true;
+    });
+    this->registerAction("Proxima aba", brls::BUTTON_RT, [this](brls::View*) {
+        this->showTab((this->currentTab + 1) % TAB_COUNT);
+        return true;
+    });
 
     AddonStore::instance().load();
-    CatalogStore::instance().load();
+    CatalogAddonStore::instance().load();
+    SubtitleAddonStore::instance().load();
+    this->languageValue->setText(SubtitleAddonStore::instance().language().label);
     this->rebuildList();
-    this->rebuildCatalogList();
+    this->rebuildCatalogAddonList();
+    this->rebuildSubtitleList();
+    this->showTab(TAB_STREAMS);
+}
+
+void AddonsScreen::showTab(int tab)
+{
+    // Focus left inside a tab that's about to be hidden would sit on an
+    // invisible view -- park it on the screen, then hand it to the new tab.
+    bool focusWasHidden = false;
+    for (brls::View* v = brls::Application::getCurrentFocus(); v != nullptr; v = v->getParent())
+        for (int t = 0; t < TAB_COUNT; t++)
+            if (t != tab && v == this->tabs[t])
+                focusWasHidden = true;
+    if (focusWasHidden)
+        brls::Application::giveFocus(this);
+
+    this->currentTab = tab;
+
+    for (int t = 0; t < TAB_COUNT; t++)
+    {
+        bool active = t == tab;
+        this->tabs[t]->setVisibility(active ? brls::Visibility::VISIBLE : brls::Visibility::GONE);
+        this->tabButtons[t]->setHoverColors(active ? ui::color("accent") : ui::color("surface_raised"),
+            active ? ui::color("accent_hover") : ui::color("surface_hover"));
+    }
+
+    if (focusWasHidden)
+    {
+        brls::Box* showing = this->tabs[tab];
+        brls::sync([showing]() { brls::Application::giveFocus(showing); });
+    }
 }
 
 void AddonsScreen::openAddDialog()
 {
+    if (this->currentTab == TAB_CATALOGS || this->currentTab == TAB_SUBTITLES)
+    {
+        bool catalogs = this->currentTab == TAB_CATALOGS;
+        brls::Application::getImeManager()->openForText(
+            [this, catalogs](std::string text) {
+                AddonListStore& store = catalogs ? (AddonListStore&)CatalogAddonStore::instance()
+                                                 : (AddonListStore&)SubtitleAddonStore::instance();
+                std::string error = store.add(text);
+                if (error.empty())
+                    brls::Application::notify(catalogs ? "Addon de catalogo adicionado" : "Addon de legendas adicionado");
+                else
+                    brls::Application::notify(error);
+                if (catalogs)
+                    this->rebuildCatalogAddonList();
+                else
+                    this->rebuildSubtitleList();
+            },
+            catalogs ? "Adicionar Addon de Catalogo" : "Adicionar Addon de Legendas",
+            catalogs ? "Cole a URL do manifesto (ex: anime-kitsu.strem.fun/manifest.json -- o https:// e opcional)"
+                     : "Cole a URL do manifesto (ex: opensubtitles-v3.strem.io/manifest.json -- o https:// e opcional)",
+            256, "");
+        return;
+    }
+
     brls::Application::getImeManager()->openForText(
         [this](std::string text) {
             std::string error = AddonStore::instance().add(text);
@@ -338,13 +472,13 @@ void AddonsScreen::rebuildList()
         brls::sync([this]() { brls::Application::giveFocus(this->listBox); });
 }
 
-void AddonsScreen::rebuildCatalogList()
+void AddonsScreen::rebuildAddonList(AddonListStore& store, brls::Box* box, const std::string& kind)
 {
-    // Same reasoning as rebuildList() above: a row's own toggle triggers
+    // Same reasoning as rebuildList(): a row's own toggle/remove triggers
     // this rebuild, so park focus off the list before tearing it down.
     bool focusWasInList = false;
     for (brls::View* v = brls::Application::getCurrentFocus(); v != nullptr; v = v->getParent())
-        if (v == this->catalogListBox)
+        if (v == box)
         {
             focusWasInList = true;
             break;
@@ -352,19 +486,47 @@ void AddonsScreen::rebuildCatalogList()
     if (focusWasInList)
         brls::Application::giveFocus(this);
 
-    this->catalogListBox->clearViews();
+    box->clearViews();
 
-    auto& catalogs = CatalogStore::instance().all();
-    for (size_t i = 0; i < catalogs.size(); i++)
+    auto& addons = store.all();
+
+    if (addons.empty())
     {
-        this->catalogListBox->addView(new CatalogRow(catalogs[i].title, catalogs[i].enabled, [this, i]() {
-            CatalogStore::instance().toggle(i);
-            brls::Application::notify(
-                CatalogStore::instance().all()[i].enabled ? "Catalogo ativado" : "Catalogo desativado");
-            this->rebuildCatalogList();
-        }));
+        auto* empty = new brls::Label();
+        empty->setText("Nenhum addon de " + kind + " configurado ainda -- pressione X para adicionar um.");
+        empty->setTextColor(nvgRGB(150, 150, 150));
+        box->addView(empty);
+    }
+    else
+    {
+        for (size_t i = 0; i < addons.size(); i++)
+        {
+            box->addView(new AddonRow(
+                addons[i].url, addons[i].enabled,
+                [this, &store, box, kind, i]() {
+                    store.toggle(i);
+                    brls::Application::notify(
+                        "Addon de " + kind + (store.all()[i].enabled ? " ativado" : " desativado"));
+                    this->rebuildAddonList(store, box, kind);
+                },
+                [this, &store, box, kind, i]() {
+                    store.remove(i);
+                    brls::Application::notify("Addon de " + kind + " removido");
+                    this->rebuildAddonList(store, box, kind);
+                }));
+        }
     }
 
     if (focusWasInList)
-        brls::sync([this]() { brls::Application::giveFocus(this->catalogListBox); });
+        brls::sync([box]() { brls::Application::giveFocus(box); });
+}
+
+void AddonsScreen::rebuildCatalogAddonList()
+{
+    this->rebuildAddonList(CatalogAddonStore::instance(), this->catalogAddonListBox, "catalogo");
+}
+
+void AddonsScreen::rebuildSubtitleList()
+{
+    this->rebuildAddonList(SubtitleAddonStore::instance(), this->subtitleListBox, "legendas");
 }

@@ -75,6 +75,10 @@ std::function<bool(brls::View*)> makeResumeAction(const ContinueWatching& c)
         ctx.posterUrl             = c.poster;
         ctx.subtitle              = c.subtitle;
         ctx.resumePositionSeconds = c.positionSeconds;
+        // An entry only remembers the show, not which episode it was on --
+        // only a movie's id is also the id to ask subtitles addons about.
+        if (c.type == "movie")
+            ctx.videoId = c.id;
 
         if (c.isTorrent)
         {

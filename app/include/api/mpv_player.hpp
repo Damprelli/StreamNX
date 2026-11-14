@@ -71,6 +71,12 @@ class MpvPlayer
     int64_t getCurrentTrack(const std::string& type);
     void setTrack(const std::string& type, int64_t id);
 
+    // Adds an external subtitle file (e.g. from a subtitles addon) as one
+    // more "sub" track -- only valid once the current file has loaded.
+    // `select` makes it the active track right away; otherwise it just
+    // joins the list PlayerSettingsScreen cycles through.
+    void addSubtitle(const std::string& url, const std::string& title, const std::string& lang, bool select);
+
     double getSpeed();
     void setSpeed(double value);
 

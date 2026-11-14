@@ -4,7 +4,9 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
+#include "api/stremio_api.hpp"
 #include "model/playback_context.hpp"
 
 class VideoView;
@@ -34,10 +36,19 @@ class PlayerScreen : public brls::Box
     // stops matters, not just a clean finish.
     void saveProgress();
     void openNextEpisode();
+    // Asks every enabled subtitles addon (SubtitleAddonStore) for
+    // ctx.videoId; whatever comes back is added to mpv as extra "sub"
+    // tracks once the file has loaded (sub-add fails before that).
+    void fetchAddonSubtitles();
+    void flushAddonSubtitles();
 
     PlaybackContext ctx;
     VideoView* videoView = nullptr;
     bool stopped         = false;
+    bool fileLoaded      = false;
+
+    std::vector<stremio::SubtitleEntry> pendingSubtitles;
+    bool subtitleAutoSelected = false;
 
     std::shared_ptr<bool> alive = std::make_shared<bool>(true);
 };

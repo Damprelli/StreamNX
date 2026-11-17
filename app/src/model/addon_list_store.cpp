@@ -8,9 +8,10 @@
 void to_json(nlohmann::json& j, const Addon& a);
 void from_json(const nlohmann::json& j, Addon& a);
 
-AddonListStore::AddonListStore(const char* file, const char* duplicateMessage)
+AddonListStore::AddonListStore(const char* file, const char* duplicateMessage, cloud::AddonList cloudList)
     : file(file)
     , duplicateMessage(duplicateMessage)
+    , cloudList(cloudList)
 {
 }
 
@@ -66,6 +67,7 @@ std::string AddonListStore::add(const std::string& rawUrl)
 
     this->items.push_back(Addon { url, true });
     this->save();
+    cloud::addonAdded(this->cloudList, this->items.back());
     return "";
 }
 
@@ -73,8 +75,10 @@ void AddonListStore::remove(size_t index)
 {
     if (index >= this->items.size())
         return;
+    std::string url = this->items[index].url;
     this->items.erase(this->items.begin() + index);
     this->save();
+    cloud::addonRemoved(this->cloudList, url);
 }
 
 void AddonListStore::toggle(size_t index)
@@ -82,6 +86,14 @@ void AddonListStore::toggle(size_t index)
     if (index >= this->items.size())
         return;
     this->items[index].enabled = !this->items[index].enabled;
+    this->save();
+    cloud::addonChanged(this->cloudList, this->items[index]);
+}
+
+void AddonListStore::replaceAll(std::vector<Addon> newItems)
+{
+    this->load(); // the settings live in the same file -- read them before saving over it
+    this->items = std::move(newItems);
     this->save();
 }
 

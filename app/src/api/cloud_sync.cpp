@@ -1,7 +1,9 @@
 #include "api/cloud_sync.hpp"
 #include "model/addon_store.hpp"
+#include "model/catalog_addon_store.hpp"
 #include "model/continue_watching_store.hpp"
 #include "model/favorites_store.hpp"
+#include "model/subtitle_addon_store.hpp"
 
 #include <borealis.hpp>
 #include <nlohmann/json.hpp>
@@ -299,16 +301,43 @@ std::string errorOf(const http::Response& r)
     return "Erro no servidor (HTTP " + std::to_string(r.status) + ").";
 }
 
+std::string addonPath(AddonList list)
+{
+    switch (list)
+    {
+        case AddonList::Catalogs:
+            return "/api/me/catalog-addons";
+        case AddonList::Subtitles:
+            return "/api/me/subtitle-addons";
+        default:
+            return "/api/me/addons";
+    }
+}
+
 json localLists()
 {
     FavoritesStore::instance().load();
     ContinueWatchingStore::instance().load();
     AddonStore::instance().load();
+    CatalogAddonStore::instance().load();
+    SubtitleAddonStore::instance().load();
     return json {
         { "favorites", FavoritesStore::instance().all() },
         { "continueWatching", ContinueWatchingStore::instance().all() },
         { "addons", AddonStore::instance().all() },
+        { "catalogAddons", CatalogAddonStore::instance().all() },
+        { "subtitleAddons", SubtitleAddonStore::instance().all() },
     };
+}
+
+// The catalog/subtitle tabs came later: a server that predates them simply
+// doesn't send them, and those local lists are left as they are.
+bool optionalAddons(const json& j, const char* key, std::vector<Addon>& out)
+{
+    if (!j.contains(key))
+        return false;
+    out = j.at(key).get<std::vector<Addon>>();
+    return true;
 }
 
 // Replaces the local lists with the server's -- parsed in full first, so a
@@ -321,10 +350,17 @@ bool applyState(const std::string& body)
         auto favs    = j.at("favorites").get<std::vector<Favorite>>();
         auto watches = j.at("continueWatching").get<std::vector<ContinueWatching>>();
         auto addons  = j.at("addons").get<std::vector<Addon>>();
+        std::vector<Addon> catalogs, subtitles;
+        bool hasCatalogs  = optionalAddons(j, "catalogAddons", catalogs);
+        bool hasSubtitles = optionalAddons(j, "subtitleAddons", subtitles);
 
         FavoritesStore::instance().replaceAll(std::move(favs));
         ContinueWatchingStore::instance().replaceAll(std::move(watches));
         AddonStore::instance().replaceAll(std::move(addons));
+        if (hasCatalogs)
+            CatalogAddonStore::instance().replaceAll(std::move(catalogs));
+        if (hasSubtitles)
+            SubtitleAddonStore::instance().replaceAll(std::move(subtitles));
 
         if (j.contains("profile") && j["profile"].is_object())
         {
@@ -630,6 +666,8 @@ void logout()
     FavoritesStore::instance().replaceAll({});
     ContinueWatchingStore::instance().replaceAll({});
     AddonStore::instance().replaceAll({});
+    CatalogAddonStore::instance().replaceAll({});
+    SubtitleAddonStore::instance().replaceAll({});
 }
 
 void syncNow(http::AliveFlag alive, std::function<void(const std::string& error)> done)
@@ -689,21 +727,24 @@ void continueRemoved(const std::string& id)
     push([id](const Session& s) { return call(s, "DELETE", "/api/me/continue-watching/" + urlEncode(id)); });
 }
 
-void addonAdded(const Addon& addon)
+void addonAdded(AddonList list, const Addon& addon)
 {
-    json body = addon;
-    push([body](const Session& s) { return call(s, "POST", "/api/me/addons", body); });
+    json body        = addon;
+    std::string path = addonPath(list);
+    push([body, path](const Session& s) { return call(s, "POST", path, body); });
 }
 
-void addonChanged(const Addon& addon)
+void addonChanged(AddonList list, const Addon& addon)
 {
-    json body = addon;
-    push([body](const Session& s) { return call(s, "PATCH", "/api/me/addons", body); });
+    json body        = addon;
+    std::string path = addonPath(list);
+    push([body, path](const Session& s) { return call(s, "PATCH", path, body); });
 }
 
-void addonRemoved(const std::string& url)
+void addonRemoved(AddonList list, const std::string& url)
 {
-    push([url](const Session& s) { return call(s, "DELETE", "/api/me/addons?url=" + urlEncode(url)); });
+    std::string path = addonPath(list) + "?url=" + urlEncode(url);
+    push([path](const Session& s) { return call(s, "DELETE", path); });
 }
 
 } // namespace cloud

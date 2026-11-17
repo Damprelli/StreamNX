@@ -15,7 +15,8 @@ std::string lower(std::string s)
 } // namespace
 
 SubtitleAddonStore::SubtitleAddonStore()
-    : AddonListStore("subtitle_addons.json", "Esse addon de legendas ja foi adicionado.")
+    : AddonListStore(
+          "subtitle_addons.json", "Esse addon de legendas ja foi adicionado.", cloud::AddonList::Subtitles)
 {
 }
 

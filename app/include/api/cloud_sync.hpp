@@ -9,7 +9,7 @@
 #include "model/favorite.hpp"
 
 // Profile sync with StreamNX-Backend: favorites, "Continuar Assistindo" and
-// addons follow the logged-in profile across the Switch, the PC and the web.
+// addons (all three tabs) follow the logged-in profile across the Switch, the PC and the web.
 //
 // The local JSON files stay the source the screens read from -- this only
 // keeps them in step with the server:
@@ -62,8 +62,16 @@ void favoriteRemoved(const std::string& id);
 void continueTouched(const ContinueWatching& item);
 void continueProgress(const ContinueWatching& item);
 void continueRemoved(const std::string& id);
-void addonAdded(const Addon& addon);
-void addonChanged(const Addon& addon);
-void addonRemoved(const std::string& url);
+// Which addon tab a hook is for -- the profile keeps one list per tab.
+enum class AddonList
+{
+    Streams,
+    Catalogs,
+    Subtitles,
+};
+
+void addonAdded(AddonList list, const Addon& addon);
+void addonChanged(AddonList list, const Addon& addon);
+void addonRemoved(AddonList list, const std::string& url);
 
 } // namespace cloud

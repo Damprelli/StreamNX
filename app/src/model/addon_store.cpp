@@ -148,7 +148,7 @@ std::string AddonStore::add(const std::string& rawUrl)
 
     this->items.push_back(Addon { url, true });
     this->save();
-    cloud::addonAdded(this->items.back());
+    cloud::addonAdded(cloud::AddonList::Streams, this->items.back());
     return "";
 }
 
@@ -159,7 +159,7 @@ void AddonStore::remove(size_t index)
     std::string url = this->items[index].url;
     this->items.erase(this->items.begin() + index);
     this->save();
-    cloud::addonRemoved(url);
+    cloud::addonRemoved(cloud::AddonList::Streams, url);
 }
 
 void AddonStore::toggle(size_t index)
@@ -168,7 +168,7 @@ void AddonStore::toggle(size_t index)
         return;
     this->items[index].enabled = !this->items[index].enabled;
     this->save();
-    cloud::addonChanged(this->items[index]);
+    cloud::addonChanged(cloud::AddonList::Streams, this->items[index]);
 }
 
 void AddonStore::replaceAll(std::vector<Addon> newItems)
